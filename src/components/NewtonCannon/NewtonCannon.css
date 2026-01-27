@@ -1,0 +1,367 @@
+.container {
+  background-color: black;
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.earth-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.terra-image {
+  /* width e height serão definidos inline pois dependem de EARTH_DIAMETER */
+}
+
+.planet-reference-circle {
+  border: 2px dashed rgba(255, 255, 255, 0.5);
+  border-radius: 50%;
+  pointer-events: none;
+  /* position, left, top, transform, width e height serão definidos inline */
+}
+
+.planet-size-indicator {
+  color: white;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+  /* position, left, top, transform e fontSize serão definidos inline */
+}
+
+.planet-gravity-indicator {
+  color: white;
+  pointer-events: none;
+  user-select: none;
+  text-align: center;
+  /* position, left, top, transform e fontSize serão definidos inline */
+}
+
+.planet-gravity-indicator > div {
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.cannon-image {
+  position: absolute;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: auto;
+  /* height e top serão definidos inline pois dependem de CANNON_HEIGHT e initialY */
+  z-index: 5; /* garantir que o canhão fique à frente do Sol */
+}
+
+.velocity-display {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-weight: bold;
+  color: white;
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.8), 0 0 16px rgba(255, 255, 255, 0.5);
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
+  z-index: 100;
+  /* top e fontSize serão definidos inline pois dependem de initialY, CANNON_HEIGHT e FONT_SIZE */
+}
+
+.instructions-container {
+  position: absolute;
+  left: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: white;
+  pointer-events: none;
+  user-select: none;
+  z-index: 1000;
+  /* fontSize será definido inline pois depende de FONT_SIZE */
+}
+
+.instructions-title {
+  margin-bottom: 8px;
+  font-weight: bold;
+}
+
+.instructions-table {
+  border-collapse: collapse;
+  /* fontSize será definido inline pois depende de FONT_SIZE */
+}
+
+.instructions-table td {
+  padding-bottom: 4px;
+}
+
+.instructions-table td:first-child {
+  padding-right: 12px;
+  text-align: center;
+}
+
+.distance-indicator-horizontal-line {
+  position: absolute;
+  left: 50%;
+  width: 200px;
+  height: 1px;
+  background-color: white;
+  transform: translate(-50%, -50%);
+  /* top será definido inline pois depende de EARTH_RADIUS_PX */
+}
+
+.distance-indicator-vertical-line {
+  position: absolute;
+  width: 1px;
+  background-color: white;
+  transform: translateY(-50%);
+  /* top, left e height serão definidos inline pois dependem de initialY e EARTH_RADIUS_PX */
+}
+
+.distance-indicator-arrow {
+  position: absolute;
+  left: 50%;
+  color: white;
+  font-size: 10px;
+  line-height: 1;
+  pointer-events: none;
+  user-select: none;
+  text-align: center;
+  width: 10px;
+  /* top e transform serão definidos inline pois dependem de initialY, EARTH_RADIUS_PX e ARROWS_H */
+}
+
+.distance-indicator-text {
+  position: absolute;
+  color: white;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+  line-height: 1;
+  padding-right: 10px;
+  /* top, left, transform e fontSize serão definidos inline pois dependem de initialY, EARTH_RADIUS_PX e FONT_SIZE */
+}
+
+.bullet {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: auto;
+  height: auto;
+  will-change: transform;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  pointer-events: none;
+  user-select: none;
+  z-index: 10; /* garantir que as balas fiquem à frente do Sol e de outros elementos de fundo */
+  /* transform será definido inline pois depende de roundedX e roundedY calculados em runtime */
+}
+
+.satellite-marker {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 20px;  /* mais 50% em relação aos 15px anteriores (~2x a bala base) */
+  height: 20px;
+  border-radius: 50%;
+  /* Terra vista do espaço: azul com leves "nuvens" brancas */
+  background:
+    radial-gradient(circle at 30% 30%, rgba(255,255,255,0.8) 0, rgba(255,255,255,0) 40%),
+    radial-gradient(circle at 70% 60%, rgba(255,255,255,0.6) 0, rgba(255,255,255,0) 45%),
+    radial-gradient(circle at 20% 80%, rgba(255,255,255,0.5) 0, rgba(255,255,255,0) 35%),
+    #2e8bff;
+  box-shadow: 0 0 8px rgba(46, 139, 255, 0.9);
+  pointer-events: none;
+  user-select: none;
+  z-index: 9; /* acima do Sol, abaixo das balas */
+}
+
+.ellipse-velocity-label {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  color: #ffffff;
+  font-size: 12px;
+  text-shadow: 0 0 4px rgba(0, 0, 0, 0.7);
+  pointer-events: none;
+  user-select: none;
+  text-align: center;
+  line-height: 1.6;
+  z-index: 9;
+}
+
+.ellipse-velocity-value {
+  font-size: 16px;
+}
+
+.ellipse-orbit-outline {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  border: 2px dashed rgba(255, 255, 255, 0.6);
+  border-radius: 50%;
+  background: transparent;
+  pointer-events: none;
+  user-select: none;
+  z-index: 8;
+}
+
+.ellipse-info-text {
+  position: absolute;
+  left: 36px;
+  top: 36px;
+  max-width: 400px;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 16px;
+  line-height: 1.5;
+  pointer-events: none;
+  user-select: none;
+  z-index: 10;
+  opacity: 0;
+  transition: opacity 0.5s ease-in-out;
+}
+
+.ellipse-info-text.visible {
+  opacity: 1;
+}
+
+.ellipse-info-text p {
+  margin: 0 0 20px 0;
+}
+
+.ellipse-info-text p:last-child {
+  margin-bottom: 0;
+}
+
+.sun {
+  position: relative;
+  animation: sunCorona 30s ease-in-out infinite;
+  overflow: hidden;
+  will-change: box-shadow;
+}
+
+.sun::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(
+    circle at 30% 30%,
+    rgba(255, 183, 77, 0.3) 0%,
+    rgba(255, 152, 0, 0.2) 20%,
+    rgba(255, 111, 0, 0.1) 40%,
+    transparent 60%
+  );
+  animation: sunSurface1 16s ease-in-out infinite;
+  border-radius: 50%;
+}
+
+.sun::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(
+    circle at 70% 70%,
+    rgba(255, 183, 77, 0.25) 0%,
+    rgba(255, 152, 0, 0.15) 25%,
+    rgba(255, 111, 0, 0.1) 45%,
+    transparent 65%
+  );
+  animation: sunSurface2 24s ease-in-out infinite;
+  border-radius: 50%;
+}
+
+@keyframes sunSurface1 {
+  0% {
+    transform: rotate(0deg) scale(1);
+    opacity: 0.6;
+  }
+  25% {
+    transform: rotate(90deg) scale(1.1);
+    opacity: 0.7;
+  }
+  50% {
+    transform: rotate(180deg) scale(1);
+    opacity: 0.6;
+  }
+  75% {
+    transform: rotate(270deg) scale(0.95);
+    opacity: 0.65;
+  }
+  100% {
+    transform: rotate(360deg) scale(1);
+    opacity: 0.6;
+  }
+}
+
+@keyframes sunSurface2 {
+  0% {
+    transform: rotate(0deg) scale(1);
+    opacity: 0.5;
+  }
+  33% {
+    transform: rotate(120deg) scale(1.15);
+    opacity: 0.6;
+  }
+  66% {
+    transform: rotate(240deg) scale(0.9);
+    opacity: 0.55;
+  }
+  100% {
+    transform: rotate(360deg) scale(1);
+    opacity: 0.5;
+  }
+}
+
+@keyframes sunCorona {
+  0% {
+    box-shadow: 
+      0 0 60px rgba(255, 152, 0, 0.8), 
+      0 0 100px rgba(255, 152, 0, 0.6), 
+      0 0 140px rgba(255, 152, 0, 0.4),
+      0 0 180px rgba(255, 152, 0, 0.2);
+  }
+  20% {
+    box-shadow: 
+      0 0 65px rgba(255, 152, 0, 0.85), 
+      0 0 105px rgba(255, 152, 0, 0.65), 
+      0 0 145px rgba(255, 152, 0, 0.45),
+      0 0 185px rgba(255, 152, 0, 0.25);
+  }
+  40% {
+    box-shadow: 
+      0 0 70px rgba(255, 152, 0, 0.9), 
+      0 0 110px rgba(255, 152, 0, 0.7), 
+      0 0 150px rgba(255, 152, 0, 0.5),
+      0 0 190px rgba(255, 152, 0, 0.3);
+  }
+  60% {
+    box-shadow: 
+      0 0 68px rgba(255, 152, 0, 0.88), 
+      0 0 108px rgba(255, 152, 0, 0.68), 
+      0 0 148px rgba(255, 152, 0, 0.48),
+      0 0 188px rgba(255, 152, 0, 0.28);
+  }
+  80% {
+    box-shadow: 
+      0 0 63px rgba(255, 152, 0, 0.82), 
+      0 0 103px rgba(255, 152, 0, 0.62), 
+      0 0 143px rgba(255, 152, 0, 0.42),
+      0 0 183px rgba(255, 152, 0, 0.22);
+  }
+  100% {
+    box-shadow: 
+      0 0 60px rgba(255, 152, 0, 0.8), 
+      0 0 100px rgba(255, 152, 0, 0.6), 
+      0 0 140px rgba(255, 152, 0, 0.4),
+      0 0 180px rgba(255, 152, 0, 0.2);
+  }
+}
+

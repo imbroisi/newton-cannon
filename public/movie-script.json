@@ -1,0 +1,13 @@
+[
+  { "wait": 0.1, "cmd": "star" },
+  { "wait":  0.1 , "cmd": "show circular orbit" },
+  { "wait":  0.1 , "cmd": "bg" },
+  { "wait":  0.1 , "cmd": "shrink planet" },
+  { "wait":  0.1 , "cmd": "shrink planet" },
+  { "wait":  0.1 , "cmd": "shrink planet" },
+  { "wait":  0.1 , "cmd": "shrink planet" },
+  { "wait":  0.1 , "cmd": "shrink planet" },
+  { "wait":  0.1 , "cmd": "shrink planet" },
+  { "wait":  0.1 , "cmd": "size indicator" }
+
+]
