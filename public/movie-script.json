@@ -1,13 +1,50 @@
 [
-  { "wait": 0.1, "cmd": "star" },
-  { "wait":  0.1 , "cmd": "show circular orbit" },
-  { "wait":  0.1 , "cmd": "bg" },
-  { "wait":  0.1 , "cmd": "shrink planet" },
-  { "wait":  0.1 , "cmd": "shrink planet" },
-  { "wait":  0.1 , "cmd": "shrink planet" },
-  { "wait":  0.1 , "cmd": "shrink planet" },
-  { "wait":  0.1 , "cmd": "shrink planet" },
-  { "wait":  0.1 , "cmd": "shrink planet" },
-  { "wait":  0.1 , "cmd": "size indicator" }
-
+  {
+    "wait": 0,
+    "cmd": "k"
+  },
+  {
+    "wait": 0.46,
+    "cmd": "e"
+  },
+  {
+    "wait": 0.16,
+    "cmd": "t"
+  },
+  {
+    "wait": 0.56,
+    "cmd": "b"
+  },
+  {
+    "wait": 2.93,
+    "cmd": "-"
+  },
+  {
+    "wait": 2.06,
+    "cmd": "-"
+  },
+  {
+    "wait": 1.94,
+    "cmd": "-"
+  },
+  {
+    "wait": 1.37,
+    "cmd": "-"
+  },
+  {
+    "wait": 1.56,
+    "cmd": "-"
+  },
+  {
+    "wait": 1.85,
+    "cmd": "-"
+  },
+  {
+    "wait": 2.87,
+    "cmd": "i"
+  },
+  {
+    "wait": 7.85,
+    "cmd": "k"
+  }
 ]

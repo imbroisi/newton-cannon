@@ -237,7 +237,7 @@
 
 .sun {
   position: relative;
-  animation: sunCorona 30s ease-in-out infinite;
+  animation: sunCorona 120s ease-in-out infinite;
   overflow: hidden;
   will-change: box-shadow;
 }
@@ -256,7 +256,7 @@
     rgba(255, 111, 0, 0.1) 40%,
     transparent 60%
   );
-  animation: sunSurface1 16s ease-in-out infinite;
+  animation: sunSurface1 120s ease-in-out infinite;
   border-radius: 50%;
 }
 
@@ -274,7 +274,7 @@
     rgba(255, 111, 0, 0.1) 45%,
     transparent 65%
   );
-  animation: sunSurface2 24s ease-in-out infinite;
+  animation: sunSurface2 120s ease-in-out infinite;
   border-radius: 50%;
 }
 

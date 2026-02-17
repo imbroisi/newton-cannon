@@ -40,14 +40,15 @@ const http = require('http');
 const OUTPUT_DIR = path.join(__dirname, '../video-frames');
 const FPS = 60; // Frames por segundo
 // Duração padrão do vídeo em segundos (pode ser sobrescrita via argumento --duration)
-// 11303 frames / 60 fps = ~188 segundos (3 minutos)
-const DEFAULT_DURATION_SECONDS = 188;
+// Agora: soma de todos os tempos "wait" definidos em movie-script.ts
+// (valor fixo anterior: 188s para 11303 frames a 60 FPS)
+const DEFAULT_DURATION_SECONDS = 0;
 // Velocidade de animação padrão para geração de vídeo (pode ser sobrescrita via argumento --animation-speed)
 // Browser: ANIMATION_SPEED = 1200, período da órbita = 12 segundos
 // Vídeo: período da órbita medido = 10 segundos (20% mais rápido)
 // Correção: reduzir ANIMATION_SPEED por fator de 10/12 = 0.833 para igualar o período
 // Valor anterior: 200, novo valor: 200 * (10/12) = 166.67 ≈ 167
-const ANIMATION_SPEED_VIDEO_DEFAULT = 167;
+const ANIMATION_SPEED_VIDEO_DEFAULT = 60;
 const APP_URL = 'http://localhost:3000'; // URL da aplicação React
 const RESOLUTION = '1920x1080'; // Resolução do vídeo (1080p)
 
@@ -59,7 +60,7 @@ Uso: node scripts/generate-video.js [opções]
 
 Opções:
   --duration, -t <segundos>     Duração do vídeo em segundos
-                                  Padrão: ${DEFAULT_DURATION_SECONDS} segundos (~${Math.floor(DEFAULT_DURATION_SECONDS / 60)} minutos)
+                                  Padrão: soma dos tempos (wait) definidos em movie-script.ts
 
   --animation-speed, -a <valor>  Velocidade de animação para geração do vídeo
                                   Padrão: ${ANIMATION_SPEED_VIDEO_DEFAULT}
@@ -97,6 +98,7 @@ function parseArgs() {
   
   const result = {
     duration: DEFAULT_DURATION_SECONDS,
+    durationFromArgs: false, // true se --duration / -t for especificado
     animationSpeed: ANIMATION_SPEED_VIDEO_DEFAULT, // Usar default se não for especificado
     doubleFrames: false, // Por padrão, não dobrar frames
     star: null // Nome da estrela (opcional)
@@ -107,6 +109,7 @@ function parseArgs() {
       const duration = parseFloat(args[i + 1]);
       if (!isNaN(duration) && duration > 0) {
         result.duration = duration;
+        result.durationFromArgs = true;
       }
     } else if ((args[i] === '--animation-speed' || args[i] === '-a') && args[i + 1]) {
       const speed = parseFloat(args[i + 1]);
@@ -122,8 +125,16 @@ function parseArgs() {
   return result;
 }
 
-const { duration: DURATION_SECONDS, animationSpeed: ANIMATION_SPEED_PARAM, doubleFrames: DOUBLE_FRAMES, star: STAR_NAME } = parseArgs();
-const TOTAL_FRAMES = FPS * DURATION_SECONDS;
+const {
+  duration: INITIAL_DURATION_SECONDS,
+  durationFromArgs: DURATION_FROM_ARGS,
+  animationSpeed: ANIMATION_SPEED_PARAM,
+  doubleFrames: DOUBLE_FRAMES,
+  star: STAR_NAME
+} = parseArgs();
+
+let DURATION_SECONDS = INITIAL_DURATION_SECONDS;
+let TOTAL_FRAMES = FPS * DURATION_SECONDS;
 
 // Formato do vídeo de saída. Valores válidos: 'mp4', 'mov', 'avi', 'mkv', 'webm'
 // IMPORTANTE: Para preservar transparência, use 'mov' e ajuste o codec para ProRes 4444
@@ -181,6 +192,28 @@ for (let i = 0; i < VIDEO_SCRIPT.length; i++) {
   if (typeof action.wait !== 'number' || typeof action.cmd !== 'string') {
     throw new Error(`Ação ${i} no VIDEO_SCRIPT deve ter { wait: number, cmd: string }, mas recebeu: ${JSON.stringify(action)}`);
   }
+}
+
+// Se a duração NÃO foi especificada na linha de comando, usar a soma de todos os "wait" do script
+// (incluindo os marcadores "k" de gravação, para que o último "k" conte na duração do vídeo).
+if (!DURATION_FROM_ARGS) {
+  const scriptDurationSeconds = VIDEO_SCRIPT.reduce((total, action) => {
+    const wait = typeof action.wait === 'number' ? action.wait : 0;
+    return total + wait;
+  }, 0);
+
+  DURATION_SECONDS = scriptDurationSeconds;
+  TOTAL_FRAMES = Math.round(FPS * DURATION_SECONDS);
+
+  console.log(`⏱️  Duração não especificada na linha de comando.`);
+  console.log(`    Usando soma dos tempos (wait) do movie-script: ${DURATION_SECONDS.toFixed(2)} segundos (~${Math.round(DURATION_SECONDS / 60)} minutos).`);
+  console.log(`    Total de frames: ${TOTAL_FRAMES} a ${FPS} FPS.`);
+}
+
+// Remover marcadores de gravação (cmd "k"): início e fim da gravação no browser; não são teclas a executar
+VIDEO_SCRIPT = VIDEO_SCRIPT.filter(action => action.cmd.toLowerCase().trim() !== 'k');
+if (VIDEO_SCRIPT.length > 0) {
+  console.log(`   (após remover marcadores "k" de gravação: ${VIDEO_SCRIPT.length} ações)`);
 }
 
 // Mapeamento de comandos legíveis para teclas

@@ -5,6 +5,7 @@ import canhaoImage from '../../images/canhao.png';
 import balaImage from '../../images/bala.png';
 import humanImage from '../../images/human.png';
 import einsteinLinguaImage from '../../images/einstein-lingua.png';
+import neutronStarImage from '../../images/neutron-star.svg';
 import './NewtonCannon.css';
 
 // Importar movie-script (mesmo arquivo usado para geração de vídeo e browser)
@@ -53,6 +54,8 @@ const NEUTRON_STAR_DIAMETER_M = NEUTRON_STAR_RADIUS_M * 2; // Diâmetro em metro
 const NEUTRON_STAR_GRAVITY_M_S2 = (G * M_STAR) / (NEUTRON_STAR_RADIUS_M * NEUTRON_STAR_RADIUS_M); // Gravidade na superfície em m/s²
 const NEUTRON_STAR_GRAVITY_G = NEUTRON_STAR_GRAVITY_M_S2 / GRAVITY_M_S2; // Gravidade em G
 const STAR_RADIUS_KM = 696340; // Raio da estrela em km
+// Abaixo deste planetSize mostramos "estrela de nêutrons" e a imagem (círculo #ff0000); substituição só ao atingir esse tamanho
+const NEUTRON_STAR_DISPLAY_THRESHOLD = 6.2;
 const STAR_DIAMETER_PX = EARTH_DIAMETER + 80; // Diâmetro da estrela em pixels (visual)
 const STAR_RADIUS_PX = STAR_DIAMETER_PX / 2; // Raio da estrela em pixels
 const STAR_RADIUS_M = STAR_RADIUS_KM * 1000; // Raio da estrela em metros
@@ -115,6 +118,10 @@ const ARROW_TOP_V_POSITION = 1; // Ajuste vertical da seta de cima (em pixels)
 const ARROW_BOTTOM_V_POSITION = -9; // Ajuste vertical da seta de baixo (em pixels)
 const ROCK_PLANET_DIMENSION = 101; // Tamanho do planeta rochoso em percentagem (100% = mesmo tamanho da Terra)
 const SIZE_CHANGE_SPEED = 1; // Velocidade da mudança de tamanho do planeta em segundos (apenas para tecla "-")
+// Tecla ]: estrela cresce até 90% da tela em 3s (forma vermelha); background estrelado cresce 20%
+const STAR_EXPANSION_DURATION_MS = 3000;
+const STAR_EXPANSION_TARGET_VMIN = 90;
+const STARRY_BACKGROUND_SCALE_TARGET = 1.2;
 // Ângulo de lançamento (em graus) para a tecla 7 na estrela (gira o ponto de lançamento na órbita)
 const STAR_LAUNCH_ANGLE_DEG = 150;
 // Ângulo de rotação VISUAL das órbitas em torno do centro (em graus).
@@ -215,23 +222,29 @@ const NewtonCannon = (props: NewtonCannonProps) => {
   const [showHuman, setShowHuman] = useState<boolean>(false); // Visibilidade do humano (desligado inicialmente)
   const [starFrameIndex, setStarFrameIndex] = useState<number>(1); // Índice do frame atual do Sol
   const [showSatellite, setShowSatellite] = useState<boolean>(false); // Mostrar/esconder satélite de teste (tecla 't')
-  const [satelliteAngle, setSatelliteAngle] = useState<number>(0); // Ângulo do satélite em radianos
+  // Ângulos das órbitas em refs (atualizados no rAF sem setState para evitar saltos)
   const [showEllipticalOrbit, setShowEllipticalOrbit] = useState<boolean>(false); // Mostrar/esconder órbita elíptica (tecla 'y')
-  const [ellipticalOrbitAngle, setEllipticalOrbitAngle] = useState<number>(0); // Ângulo da órbita elíptica em radianos
   const [showEllipseVelocities, setShowEllipseVelocities] = useState<boolean>(false); // Mostrar/esconder velocidades na órbita elíptica (tecla 'u')
   const [showEllipseOutline, setShowEllipseOutline] = useState<boolean>(false); // Mostrar/esconder linha tracejada da elipse (controlada junto com 'u')
   const [showOrbitOutline, setShowOrbitOutline] = useState<boolean>(false); // Mostrar/esconder tracejado da órbita (circular ou elíptica)
   const [showReferenceCircle, setShowReferenceCircle] = useState<boolean>(false); // Mostrar/esconder circunferência tracejada da superfície original (inicialmente desligado)
+  const [showNeutronReferenceCircle, setShowNeutronReferenceCircle] = useState<boolean>(false); // Mostrar/esconder circunferência tracejada da estrela de nêutrons (inicialmente desligado)
   const [showEinstein, setShowEinstein] = useState<boolean>(false); // Mostrar/esconder imagem do Einstein (inicialmente desligado)
-  const [useGreenBackground, setUseGreenBackground] = useState<boolean>(false); // Alternar background entre preto e verde
+  const [useGreenBackground, setUseGreenBackground] = useState<boolean>(false); // Opacidade do céu estrelado (0 ou 1)
+  // Tecla ]: progresso 0..1 da expansão da estrela (null = não em expansão); estrela vermelha até 90vmin em 3s; fundo +20%
+  const [starExpansionProgress, setStarExpansionProgress] = useState<number | null>(null);
   const [showSizeIndicator, setShowSizeIndicator] = useState<boolean>(true); // Mostrar/esconder texto da proporção (inicialmente visível)
   const [isScriptRunning, setIsScriptRunning] = useState<boolean>(false); // Controla se o movie-script está executando
   const [elapsedTime, setElapsedTime] = useState<number>(0); // Tempo decorrido em segundos
   const [currentCommandIndex, setCurrentCommandIndex] = useState<number>(-1); // Índice do comando sendo executado (-1 = nenhum)
   const [executedCommands, setExecutedCommands] = useState<Set<number>>(new Set()); // Índices dos comandos já executados
   const [scriptLoaded, setScriptLoaded] = useState<boolean>(false); // Indica se o script foi carregado
+  const [isRecordingScript, setIsRecordingScript] = useState<boolean>(false); // Gravação de teclas para movie-script.json (tecla K)
   const movieScriptRef = useRef<Array<{ wait: number; cmd: string }>>([]); // Script carregado
-  const scriptTimeoutsRef = useRef<Array<number | NodeJS.Timeout>>([]); // Refs para armazenar todos os timeouts/animation frames do script
+  const scriptTimeoutsRef = useRef<Array<number | NodeJS.Timeout>>([]);
+  const isRecordingScriptRef = useRef<boolean>(false);
+  const lastRecordedEventTimeRef = useRef<number | null>(null);
+  const recordedActionsRef = useRef<Array<{ wait: number; cmd: string }>>([]); // Refs para armazenar todos os timeouts/animation frames do script
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null); // Ref para o intervalo do cronômetro
   const scriptStartTimeRef = useRef<number>(0); // Tempo de início do script
   const isScriptRunningRef = useRef<boolean>(false); // Ref para verificar se o script está rodando
@@ -246,10 +259,19 @@ const NewtonCannon = (props: NewtonCannonProps) => {
   const animationFrameRef = useRef<number | null>(null);
   const satelliteAnimationRef = useRef<number | null>(null);
   const ellipticalOrbitAnimationRef = useRef<number | null>(null);
+  const satelliteAngleRef = useRef<number>(0);
+  const ellipticalOrbitAngleRef = useRef<number>(0);
+  const satelliteMarkerRef = useRef<HTMLDivElement | null>(null);
+  const ellipticalMarkerRef = useRef<HTMLDivElement | null>(null);
   const bulletIdCounter = useRef<number>(0);
   const cannonRef = useRef<HTMLImageElement | null>(null);
   const isAnimatingRef = useRef<boolean>(false);
   const fireTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const starExpansionStartVminRef = useRef<number>(0);
+  const starExpansionStartTimeRef = useRef<number>(0);
+  const starExpansionRafRef = useRef<number | null>(null);
+  const starExpansionProgressRef = useRef<number | null>(null);
+  const starExpansionOrbitScaleFactorRef = useRef<number>(1);
   const planetSizeRef = useRef<number>(100);
 
   // Posição base da boca do canhão (centro + raio da Terra + distância em km)
@@ -275,6 +297,10 @@ const NewtonCannon = (props: NewtonCannonProps) => {
   useEffect(() => {
     showStarRef.current = showStar;
   }, [showStar]);
+
+  useEffect(() => {
+    isRecordingScriptRef.current = isRecordingScript;
+  }, [isRecordingScript]);
 
   useEffect(() => {
     useRockPlanetRef.current = useRockPlanet;
@@ -313,9 +339,10 @@ const NewtonCannon = (props: NewtonCannonProps) => {
 
     // Número total de frames: 11303 frames (vídeo original tem ~3 minutos a 60fps)
     const TOTAL_STAR_FRAMES = 11303; // Frames disponíveis do vídeo do Sol
-    // Reduzir FPS para rotação mais lenta e visível (30 FPS = metade da velocidade original)
-    const FPS = 30; // Frames por segundo (metade de 60 para rotação mais lenta)
-    const FRAME_INTERVAL = 1000 / FPS; // Intervalo em milissegundos (~33.33ms)
+    // FPS controla a velocidade de rotação visual do Sol.
+    // Valor anterior: 30 FPS. Agora usamos 6 FPS (≈ 5x mais lento).
+    const FPS = 3;
+    const FRAME_INTERVAL = 1000 / FPS; // Intervalo em milissegundos
 
     // Iniciar animação
     starFrameIntervalRef.current = setInterval(() => {
@@ -335,8 +362,7 @@ const NewtonCannon = (props: NewtonCannonProps) => {
     };
   }, [showStar]);
 
-  // Animação do satélite de teste (órbita circular puramente geométrica ao redor do Sol)
-  // A velocidade angular é proporcional ao ANIMATION_SPEED para manter consistência com as balas
+  // Animação do satélite (órbita circular): raio escala com zoom da estrela (tecla ])
   useEffect(() => {
     if (!showStar || !showSatellite) {
       if (satelliteAnimationRef.current) {
@@ -346,15 +372,23 @@ const NewtonCannon = (props: NewtonCannonProps) => {
       return;
     }
 
+    const baseOrbitRadiusPx = (EARTH_DIAMETER + 80) * 0.8 / 2 + 180;
     let lastTime = performance.now();
-    const baseAngularSpeed = 0.5; // radianos por segundo (base para ANIMATION_SPEED_BROWSER)
-    // Velocidade angular efetiva: proporcional ao ANIMATION_SPEED para manter consistência
+    const baseAngularSpeed = 0.5;
     const effectiveAngularSpeed = baseAngularSpeed * (ANIMATION_SPEED / ANIMATION_SPEED_BROWSER);
+    const TWO_PI = Math.PI * 2;
 
     const animate = (time: number) => {
       const dt = (time - lastTime) / 1000;
       lastTime = time;
-      setSatelliteAngle(prev => (prev + effectiveAngularSpeed * dt) % (Math.PI * 2));
+      satelliteAngleRef.current = (satelliteAngleRef.current + effectiveAngularSpeed * dt) % TWO_PI;
+      const angle = satelliteAngleRef.current;
+      const orbitRadiusPx = baseOrbitRadiusPx * starExpansionOrbitScaleFactorRef.current;
+      if (satelliteMarkerRef.current) {
+        const x = orbitRadiusPx * Math.cos(angle);
+        const y = orbitRadiusPx * Math.sin(angle);
+        satelliteMarkerRef.current.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`;
+      }
       satelliteAnimationRef.current = requestAnimationFrame(animate);
     };
 
@@ -368,8 +402,7 @@ const NewtonCannon = (props: NewtonCannonProps) => {
     };
   }, [showStar, showSatellite]);
 
-  // Animação da órbita elíptica (órbita elíptica puramente geométrica ao redor do Sol)
-  // A velocidade angular é proporcional ao ANIMATION_SPEED para manter consistência com as balas
+  // Animação da órbita elíptica: escala com zoom da estrela (tecla ])
   useEffect(() => {
     if (!showStar || !showEllipticalOrbit) {
       if (ellipticalOrbitAnimationRef.current) {
@@ -380,15 +413,32 @@ const NewtonCannon = (props: NewtonCannonProps) => {
     }
 
     let lastTime = performance.now();
-    // Velocidade angular efetiva: proporcional ao ANIMATION_SPEED para manter consistência
-    // No browser (ANIMATION_SPEED = 1200), a velocidade é ELLIPTICAL_ORBIT_ANGULAR_SPEED
-    // No vídeo (ANIMATION_SPEED = 100), a velocidade é reduzida proporcionalmente
     const effectiveAngularSpeed = ELLIPTICAL_ORBIT_ANGULAR_SPEED * (ANIMATION_SPEED / ANIMATION_SPEED_BROWSER);
+    const TWO_PI = Math.PI * 2;
+    const starVisualRadiusPxOriginal = (EARTH_DIAMETER + 80) * 0.8 / 2;
+    const basePeriastroPx = starVisualRadiusPxOriginal + 90;
+    const baseApoastroPx = window.innerWidth / 2 - 50;
+    const baseMaxB = window.innerHeight / 2 - 50;
 
     const animate = (time: number) => {
       const dt = (time - lastTime) / 1000;
       lastTime = time;
-      setEllipticalOrbitAngle(prev => (prev + effectiveAngularSpeed * dt) % (Math.PI * 2));
+      ellipticalOrbitAngleRef.current = (ellipticalOrbitAngleRef.current + effectiveAngularSpeed * dt) % TWO_PI;
+      const angle = ellipticalOrbitAngleRef.current;
+      const scale = starExpansionOrbitScaleFactorRef.current;
+      const periastroPx = basePeriastroPx * scale;
+      const apoastroPx = baseApoastroPx * scale;
+      const a = (periastroPx + apoastroPx) / 2;
+      const c = (apoastroPx - periastroPx) / 2;
+      const maxB = baseMaxB * scale;
+      const b = Math.min(maxB, Math.sqrt(a * a - c * c));
+      const ellipseCenterX = c;
+      const ellipseCenterY = 0;
+      if (ellipticalMarkerRef.current) {
+        const satX = ellipseCenterX + a * Math.cos(angle);
+        const satY = ellipseCenterY + b * Math.sin(angle);
+        ellipticalMarkerRef.current.style.transform = `translate(calc(-50% + ${satX}px), calc(-50% + ${satY}px))`;
+      }
       ellipticalOrbitAnimationRef.current = requestAnimationFrame(animate);
     };
 
@@ -511,6 +561,19 @@ const NewtonCannon = (props: NewtonCannonProps) => {
   const executeCommand = useCallback((cmd: string) => {
     const normalizedCmd = cmd.toLowerCase().trim();
     console.log(`🔧 executeCommand chamado com: "${cmd}" -> normalizado: "${normalizedCmd}"`);
+
+    // Se o comando for apenas uma tecla (por exemplo: 'e', 't', 'b', 'h', '-', 'z', '1'...),
+    // despachar um evento de teclado para reaproveitar exatamente a mesma lógica
+    // usada quando o usuário pressiona a tecla no browser.
+    if (normalizedCmd.length === 1) {
+      const event = new KeyboardEvent('keydown', {
+        key: cmd,
+        bubbles: true,
+        cancelable: true,
+      });
+      window.dispatchEvent(event);
+      return;
+    }
     
     switch (normalizedCmd) {
       // Controle geral
@@ -813,6 +876,10 @@ const NewtonCannon = (props: NewtonCannonProps) => {
       case 'toggle reference circle':
         setShowReferenceCircle(prev => !prev);
         break;
+      // Circunferência tracejada da estrela de nêutrons
+      case 'toggle neutron circle':
+        setShowNeutronReferenceCircle(prev => !prev);
+        break;
       // Imagem do Einstein
       case 'toggle einstein':
         setShowEinstein(prev => !prev);
@@ -968,6 +1035,10 @@ const NewtonCannon = (props: NewtonCannonProps) => {
         clearInterval(timerIntervalRef.current);
         timerIntervalRef.current = null;
       }
+      if (starExpansionRafRef.current !== null) {
+        cancelAnimationFrame(starExpansionRafRef.current);
+        starExpansionRafRef.current = null;
+      }
     };
   }, []);
 
@@ -1023,15 +1094,85 @@ const NewtonCannon = (props: NewtonCannonProps) => {
   }, [handleFire]);
 
   // Listener para tecla "." esconder/mostrar indicação de distância, "Esc" para instruções,
-  // "g" para ligar/desligar texto de gravidade, "x" para limpar, "t/y" para satélites, "Enter" para executar script
+  // "g" para ligar/desligar texto de gravidade, "x" para limpar, "t/y" para satélites,
+  // "Enter" ou "j" para executar movie-script.json, "k" para gravar movie-script.json
   useEffect(() => {
     const handleKeyPress = (event: KeyboardEvent) => {
-      if (event.key === 'Enter') {
+      const key = event.key;
+
+      // Tecla K: inicia ou finaliza gravação do movie-script.json (mesma tecla; grava "k" no arquivo como marcador)
+      if (key === 'k' || key === 'K') {
+        event.preventDefault();
+        if (!isRecordingScriptRef.current) {
+          // Iniciar gravação: primeiro comando é { wait: 0, cmd: 'k' }
+          recordedActionsRef.current = [{ wait: 0, cmd: 'k' }];
+          lastRecordedEventTimeRef.current = performance.now();
+          isRecordingScriptRef.current = true;
+          setIsRecordingScript(true);
+          console.log('🎬 Gravação de movie-script iniciada (tecla K). Pressione K novamente para finalizar.');
+        } else {
+          // Finalizar gravação: último comando é { wait: X, cmd: 'k' }; abrir "Salvar como..." ou baixar
+          const now = performance.now();
+          const lastTime = lastRecordedEventTimeRef.current ?? now;
+          const waitSec = Math.max(0, (now - lastTime) / 1000);
+          recordedActionsRef.current.push({ wait: parseFloat(waitSec.toFixed(2)), cmd: 'k' });
+          const actions = recordedActionsRef.current;
+          isRecordingScriptRef.current = false;
+          setIsRecordingScript(false);
+          lastRecordedEventTimeRef.current = null;
+          const jsonString = JSON.stringify(actions, null, 2);
+
+          (async () => {
+            try {
+              if (typeof window !== 'undefined' && 'showSaveFilePicker' in window && window.isSecureContext) {
+                const w = window as typeof window & { showSaveFilePicker: (opts?: { suggestedName?: string; types?: Array<{ description: string; accept: Record<string, string[]> }> }) => Promise<{ createWritable: () => Promise<{ write: (data: string) => Promise<void>; close: () => Promise<void> }> }> };
+                const handle = await w.showSaveFilePicker({
+                  suggestedName: 'movie-script.json',
+                  types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }],
+                });
+                const writable = await handle.createWritable();
+                await writable.write(jsonString);
+                await writable.close();
+                console.log('🎬 Gravação finalizada. Arquivo salvo via "Salvar como...".');
+                return;
+              }
+            } catch (err) {
+              if (err instanceof Error && err.name === 'AbortError') return; // usuário cancelou
+            }
+            // Fallback: download para a pasta padrão do browser
+            const blob = new Blob([jsonString], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'movie-script.json';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            console.log('🎬 Gravação finalizada. Baixe movie-script.json e coloque em public/ para substituir o atual.');
+          })();
+        }
+        return;
+      }
+
+      // Durante a gravação, registrar qualquer outra tecla (wait = segundos desde o último evento)
+      if (isRecordingScriptRef.current) {
+        const now = performance.now();
+        const lastTime = lastRecordedEventTimeRef.current ?? now;
+        const waitSec = Math.max(0, (now - lastTime) / 1000);
+        lastRecordedEventTimeRef.current = now;
+        recordedActionsRef.current.push({
+          wait: parseFloat(waitSec.toFixed(2)),
+          cmd: key,
+        });
+      }
+
+      if (key === 'Enter' || key === 'j' || key === 'J') {
         event.preventDefault();
         executeBrowserScript();
         return;
       }
-      if (event.key === '.') {
+      if (key === '.') {
         console.log('🔧 Executando toggle distance');
         event.preventDefault(); // Prevenir scroll da página
         setShowDistanceIndicator(prev => !prev);
@@ -1111,12 +1252,16 @@ const NewtonCannon = (props: NewtonCannonProps) => {
         // Mostrar/esconder circunferência tracejada da superfície original
         setShowReferenceCircle(prev => !prev);
       }
+      if (event.key === 'l' || event.key === 'L') {
+        // Mostrar/esconder circunferência tracejada da estrela de nêutrons
+        setShowNeutronReferenceCircle(prev => !prev);
+      }
       if (event.key === 'i' || event.key === 'I') {
         // Mostrar/esconder imagem do Einstein
         setShowEinstein(prev => !prev);
       }
       if (event.key === 'b' || event.key === 'B') {
-        // Alternar background entre preto e verde
+        // Alternar opacidade do céu estrelado (0 ↔ 1)
         setUseGreenBackground(prev => !prev);
       }
       if (event.key === 'n' || event.key === 'N') {
@@ -1245,6 +1390,57 @@ const NewtonCannon = (props: NewtonCannonProps) => {
         // Voltar suavemente para 100% do tamanho original (com animação)
         setTargetPlanetSize(100);
       }
+      if (event.key === ']' && showStar) {
+        // Estrela cresce linearmente até 90% da tela em 3s (forma vermelha); fundo estrelado cresce 20%
+        event.preventDefault();
+        const currentDiameterPx = (EARTH_DIAMETER + 80) * 0.8 * (planetSize / 100);
+        const vminPx = Math.min(window.innerWidth, window.innerHeight) / 100;
+        starExpansionStartVminRef.current = currentDiameterPx / vminPx;
+        starExpansionStartTimeRef.current = -1; // será definido no primeiro frame com timestamp do rAF
+        if (starExpansionRafRef.current !== null) {
+          cancelAnimationFrame(starExpansionRafRef.current);
+        }
+        setStarExpansionProgress(0);
+        const tick = (timestamp: number) => {
+          if (starExpansionStartTimeRef.current < 0) {
+            starExpansionStartTimeRef.current = timestamp;
+          }
+          const elapsed = timestamp - starExpansionStartTimeRef.current;
+          const progress = Math.min(elapsed / STAR_EXPANSION_DURATION_MS, 1);
+          setStarExpansionProgress(progress);
+          if (progress < 1) {
+            starExpansionRafRef.current = requestAnimationFrame(tick);
+          } else {
+            starExpansionRafRef.current = null;
+          }
+        };
+        starExpansionRafRef.current = requestAnimationFrame(tick);
+      }
+      if (event.key === '[' && showStar && starExpansionProgressRef.current !== null) {
+        // Inverso de ]: estrela e fundo voltam ao normal em 3s
+        event.preventDefault();
+        const startProgress = starExpansionProgressRef.current;
+        starExpansionStartTimeRef.current = -1;
+        if (starExpansionRafRef.current !== null) {
+          cancelAnimationFrame(starExpansionRafRef.current);
+        }
+        const tick = (timestamp: number) => {
+          if (starExpansionStartTimeRef.current < 0) {
+            starExpansionStartTimeRef.current = timestamp;
+          }
+          const elapsed = timestamp - starExpansionStartTimeRef.current;
+          const t = Math.min(elapsed / STAR_EXPANSION_DURATION_MS, 1);
+          const progress = startProgress * (1 - t);
+          setStarExpansionProgress(progress > 0.0001 ? progress : 0);
+          if (t < 1) {
+            starExpansionRafRef.current = requestAnimationFrame(tick);
+          } else {
+            setStarExpansionProgress(null);
+            starExpansionRafRef.current = null;
+          }
+        };
+        starExpansionRafRef.current = requestAnimationFrame(tick);
+      }
       if (event.key === 's' || event.key === 'S') {
         // Rotacionar humano 90° para a esquerda (ou voltar para 0°)
         setHumanRotation(prev => prev === 0 ? -90 : 0);
@@ -1335,6 +1531,13 @@ const NewtonCannon = (props: NewtonCannonProps) => {
   useEffect(() => {
     planetSizeRef.current = planetSize;
   }, [planetSize]);
+
+  useEffect(() => {
+    starExpansionProgressRef.current = starExpansionProgress;
+    starExpansionOrbitScaleFactorRef.current = starExpansionProgress !== null && starExpansionStartVminRef.current > 0
+      ? 1 + (STAR_EXPANSION_TARGET_VMIN / starExpansionStartVminRef.current - 1) * Math.min(1, starExpansionProgress)
+      : 1;
+  }, [starExpansionProgress]);
 
   useEffect(() => {
     humanYRef.current = humanY;
@@ -1656,7 +1859,47 @@ const NewtonCannon = (props: NewtonCannonProps) => {
   };
 
   return (
-    <div className="container" style={{ backgroundColor: useGreenBackground ? 'green' : 'black' }}>
+    <div className="container" style={{ backgroundColor: 'black' }}>
+      {/* Céu estrelado estático; tecla b alterna opacidade 0/1; tecla ] faz crescer 20% */}
+      <div
+        aria-hidden="true"
+        style={{
+          position: 'absolute',
+          inset: 0,
+          zIndex: 0,
+          backgroundImage: 'url(/starry-sky.png)',
+          backgroundSize: '50% 50%',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'repeat',
+          opacity: useGreenBackground ? 1 : 0,
+          transition: 'opacity 0.3s ease-in-out',
+          pointerEvents: 'none',
+          contain: 'paint',
+          transform: `scale(${starExpansionProgress !== null ? 1 + (STARRY_BACKGROUND_SCALE_TARGET - 1) * Math.min(1, starExpansionProgress) : 1})`,
+          transformOrigin: 'center center'
+        }}
+      />
+      {/* Filtro SVG: preto → transparente, demais cores inalteradas (corpo do Sol intacto) */}
+      <svg style={{ position: 'absolute', width: 0, height: 0 }} aria-hidden="true">
+        <defs>
+          <filter id="sun-black-to-transparent" colorInterpolationFilters="sRGB">
+            {/* Coloca luminância em alpha; R,G,B inalterados */}
+            <feColorMatrix
+              in="SourceGraphic"
+              type="matrix"
+              values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0.333 0.333 0.333 0 0"
+              result="withLum"
+            />
+            {/* Mantém R,G,B; só alpha: preto (lum≈0) vira 0, resto 1 */}
+            <feComponentTransfer in="withLum" result="masked">
+              <feFuncR type="identity"/>
+              <feFuncG type="identity"/>
+              <feFuncB type="identity"/>
+              <feFuncA type="discrete" tableValues="0 0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1"/>
+            </feComponentTransfer>
+          </filter>
+        </defs>
+      </svg>
       {/* Cronômetro e lista de comandos no canto superior direito */}
       <div
         style={{
@@ -1728,10 +1971,23 @@ const NewtonCannon = (props: NewtonCannonProps) => {
       
       {/* Tabela de instruções na extrema esquerda */}
       {showInstructions && (
-        <div className="instructions-container" style={{ fontSize: `${FONT_SIZE - 2}px` }}>
+        <div className="instructions-container" style={{ fontSize: `${(FONT_SIZE - 2) * 0.8}px` }}>
           <div className="instructions-title">Instruções:</div>
-          <table className="instructions-table" style={{ fontSize: `${FONT_SIZE - 2}px` }}>
+          <table className="instructions-table" style={{ fontSize: `${(FONT_SIZE - 2) * 0.8}px` }}>
             <tbody>
+              {/* Gravação de movie-script (mesma tecla inicia/finaliza; "k" gravado no arquivo como marcador) */}
+              <tr>
+                <td>K</td>
+                <td>grava sequência de teclas em movie-script.json (mesma tecla inicia/finaliza; substitua o arquivo em public/)</td>
+              </tr>
+              {/* Grupo especial: execução do movie-script */}
+              <tr>
+                <td>J</td>
+                <td>executa o movie-script.json diretamente no browser</td>
+              </tr>
+              {/* Espaço entre grupos */}
+              <tr><td colSpan={2}>&nbsp;</td></tr>
+
               {/* Disparo (linha numérica) */}
               {Object.entries(getVelocityByKey(showStar, starMassMultiplier)).sort(([a], [b]) => {
                 // Ordenar: números primeiro (1-9), depois 0
@@ -1761,7 +2017,7 @@ const NewtonCannon = (props: NewtonCannonProps) => {
 
               {/* Controles gerais (teclas fora das linhas principais) */}
               <tr>
-                <td>Esc</td>
+                <td>ESC</td>
                 <td>liga/desliga instruções</td>
               </tr>
               <tr>
@@ -1769,51 +2025,59 @@ const NewtonCannon = (props: NewtonCannonProps) => {
                 <td>liga/desliga indicação altura</td>
               </tr>
               <tr>
-                <td>g</td>
+                <td>G</td>
                 <td>liga/desliga texto de gravidade</td>
+              </tr>
+              <tr>
+                <td>H</td>
+                <td>liga/desliga velocidade de escape</td>
               </tr>
               {/* Espaço entre grupos */}
               <tr><td colSpan={2}>&nbsp;</td></tr>
 
               {/* Linha QWERTY (Q W E R T Y U I O P) */}
               <tr>
-                <td>q</td>
+                <td>Q</td>
                 <td>muda diretamente para Terra</td>
               </tr>
               <tr>
-                <td>w</td>
+                <td>W</td>
                 <td>muda diretamente para planeta rochoso</td>
               </tr>
               <tr>
-                <td>e</td>
+                <td>E</td>
                 <td>muda diretamente para estrela</td>
               </tr>
               <tr>
-                <td>r</td>
+                <td>R</td>
                 <td>troca entre Terra, planeta rochoso e estrela</td>
               </tr>
               <tr>
-                <td>t</td>
+                <td>T</td>
                 <td>liga/desliga satélite em órbita circular ao redor da estrela</td>
               </tr>
               <tr>
-                <td>y</td>
+                <td>Y</td>
                 <td>liga/desliga satélite em órbita elíptica ao redor da estrela</td>
               </tr>
               <tr>
-                <td>u</td>
+                <td>U</td>
                 <td>liga/desliga velocidades e linha tracejada na órbita elíptica</td>
               </tr>
               <tr>
-                <td>o</td>
+                <td>O</td>
                 <td>liga/desliga tracejado da órbita (circular ou elíptica)</td>
               </tr>
               <tr>
-                <td>p</td>
+                <td>P</td>
                 <td>liga/desliga circunferência tracejada da superfície original</td>
               </tr>
               <tr>
-                <td>i</td>
+                <td>L</td>
+                <td>liga/desliga circunferência tracejada da estrela de nêutrons</td>
+              </tr>
+              <tr>
+                <td>I</td>
                 <td>liga/desliga imagem do Einstein</td>
               </tr>
               {/* Espaço entre grupos */}
@@ -1821,20 +2085,32 @@ const NewtonCannon = (props: NewtonCannonProps) => {
 
               {/* Linha ZXCV (Z X C V B N M) */}
               <tr>
-                <td>z</td>
+                <td>Z</td>
                 <td>liga/desliga tudo (exceto planeta e círculo)</td>
               </tr>
               <tr>
-                <td>x</td>
+                <td>X</td>
                 <td>liga/desliga canhão (toggle)</td>
               </tr>
               <tr>
-                <td>c</td>
+                <td>C</td>
                 <td>liga canhão (show cannon)</td>
               </tr>
               <tr>
-                <td>v</td>
+                <td>V</td>
                 <td>desliga canhão (hide cannon)</td>
+              </tr>
+              <tr>
+                <td>B</td>
+                <td>alterna opacidade do céu estrelado (0 / 1)</td>
+              </tr>
+              <tr>
+                <td>N</td>
+                <td>liga/desliga texto da proporção do sol</td>
+              </tr>
+              <tr>
+                <td>M</td>
+                <td>alterna massa da estrela (1x / 8x do sol)</td>
               </tr>
               {/* Espaço entre grupos */}
               <tr><td colSpan={2}>&nbsp;</td></tr>
@@ -1848,16 +2124,24 @@ const NewtonCannon = (props: NewtonCannonProps) => {
                 <td>+</td>
                 <td>volta tamanho do planeta para 100%</td>
               </tr>
+              <tr>
+                <td>]</td>
+                <td>estrela vermelha cresce até 90% da tela em 3s; fundo estrelado +20% (só com estrela)</td>
+              </tr>
+              <tr>
+                <td>[</td>
+                <td>inverso de ]: estrela e fundo voltam ao normal em 3s (só quando expandido)</td>
+              </tr>
               {/* Espaço entre grupos */}
               <tr><td colSpan={2}>&nbsp;</td></tr>
 
               {/* Humano */}
               <tr>
-                <td>a</td>
+                <td>A</td>
                 <td>liga/desliga humano</td>
               </tr>
               <tr>
-                <td>s</td>
+                <td>S</td>
                 <td>rota o humano (em pé/deitado)</td>
               </tr>
               <tr>
@@ -1898,7 +2182,7 @@ const NewtonCannon = (props: NewtonCannonProps) => {
               left: `calc(50% + ${(showStar ? STAR_RADIUS_PX : EARTH_RADIUS_PX) + 50 - 120}px)`,
               top: '50%',
               transform: 'translateY(-50%)',
-              fontSize: `${FONT_SIZE - 2}px`,
+              fontSize: `${FONT_SIZE * 1.5}px`,
               textAlign: 'center',
               zIndex: 1000,
               opacity: showSizeIndicator ? 1 : 0,
@@ -1907,7 +2191,7 @@ const NewtonCannon = (props: NewtonCannonProps) => {
           >
             {planetSize < 3.1 ? (
               <>0 - sumiu... <span style={{ position: 'relative', display: 'inline-block', zIndex: 1000, opacity: showEinstein ? 1 : 0, transition: 'opacity 0.3s ease-in-out' }}><img src={einsteinLinguaImage} alt="Einstein" style={{ width: '8em', height: 'auto', verticalAlign: 'middle', display: 'inline-block', transform: 'translateY(-10px) translateX(6px)', position: 'relative' }} /></span></>
-            ) : planetSize < 6.2 && starMassMultiplier !== 8 ? (
+            ) : planetSize < NEUTRON_STAR_DISPLAY_THRESHOLD && starMassMultiplier !== 8 ? (
               <>
                 <div>{formatNumber(Math.round(NEUTRON_STAR_DIAMETER_M / 1000), 0)} km</div>
                 <div style={{ marginTop: '2px' }}>estrela de nêutrons</div>
@@ -1952,7 +2236,7 @@ const NewtonCannon = (props: NewtonCannonProps) => {
         >
           {planetSize < 3.1 ? (
             <div></div>
-          ) : planetSize < 6.2 && starMassMultiplier !== 8 ? (
+          ) : planetSize < NEUTRON_STAR_DISPLAY_THRESHOLD && starMassMultiplier !== 8 ? (
             (() => {
               // Estrela de nêutrons: recalcular gravidade com massa atual
               const currentMass = M_STAR * starMassMultiplierRef.current;
@@ -2010,7 +2294,7 @@ const NewtonCannon = (props: NewtonCannonProps) => {
             <div></div>
           ) : showStar ? (
             (() => {
-              if (planetSize < 6.2 && starMassMultiplier !== 8) {
+              if (planetSize < NEUTRON_STAR_DISPLAY_THRESHOLD && starMassMultiplier !== 8) {
                 // Estrela de nêutrons: calcular velocidade de escape baseada no raio e massa atual
                 // v_escape = sqrt(2 * G * M / r)
                 // NEUTRON_STAR_RADIUS_M está em metros, precisa converter para km
@@ -2076,8 +2360,8 @@ const NewtonCannon = (props: NewtonCannonProps) => {
           )}
         </>
       )}
-      {/* Sol */}
-      {showStar && (
+      {/* Sol: só quando o tamanho ainda é maior que o de uma estrela de nêutrons (ou massa 8x); oculto durante expansão ] */}
+      {showStar && starExpansionProgress === null && (planetSize >= NEUTRON_STAR_DISPLAY_THRESHOLD || starMassMultiplier === 8) && (
         <img
           src={`/video-element-frames/frame-${String(starFrameIndex).padStart(6, '0')}.png`}
           alt="Sol animado"
@@ -2086,30 +2370,104 @@ const NewtonCannon = (props: NewtonCannonProps) => {
             left: '50%',
             top: '50%',
             transform: 'translate(-50%, -50%)',
-            // Tamanho visual do Sol 20% menor (0.8x), sem alterar física
             width: `${(EARTH_DIAMETER + 80) * 0.8 * (planetSize / 100)}px`,
             height: `${(EARTH_DIAMETER + 80) * 0.8 * (planetSize / 100)}px`,
             objectFit: 'contain',
             pointerEvents: 'none',
             userSelect: 'none',
             zIndex: 1,
-            // Quando planetSize < 3.1 (condição do "0 - sumiu..."), tornar o Sol invisível
+            backgroundColor: 'transparent',
+            filter: 'url(#sun-black-to-transparent)',
             opacity: planetSize < 3.1 ? 0 : 1,
             transition: 'opacity 0.3s ease-in-out'
           }}
         />
       )}
-      {/* Satélite de teste: órbita circular puramente geométrica ao redor do Sol */}
+      {/* Estrela de nêutrons: círculo #ff0000 (imagem SVG), mesmo diâmetro original da estrela; só ao atingir tamanho de nêutrons; oculta durante expansão ] */}
+      {showStar && starExpansionProgress === null && planetSize < NEUTRON_STAR_DISPLAY_THRESHOLD && starMassMultiplier !== 8 && (
+        <>
+          {showNeutronReferenceCircle && (
+            <div
+              className="planet-reference-circle"
+              style={{
+                position: 'absolute',
+                left: '50%',
+                top: '50%',
+                transform: 'translate(-50%, -50%)',
+                width: `${(EARTH_DIAMETER + 80) * 0.8 * (planetSize / 100)}px`,
+                height: `${(EARTH_DIAMETER + 80) * 0.8 * (planetSize / 100)}px`,
+                zIndex: 5
+              }}
+            />
+          )}
+          <img
+            src={neutronStarImage}
+            alt="Estrela de nêutrons"
+            style={{
+              position: 'absolute',
+              left: '50%',
+              top: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: `${(EARTH_DIAMETER + 80) * 0.8 * (planetSize / 100)}px`,
+              height: `${(EARTH_DIAMETER + 80) * 0.8 * (planetSize / 100)}px`,
+              objectFit: 'contain',
+              pointerEvents: 'none',
+              userSelect: 'none',
+              zIndex: 1,
+              opacity: planetSize < 3.1 ? 0 : 1,
+              transition: 'opacity 0.3s ease-in-out'
+            }}
+          />
+        </>
+      )}
+      {/* Tecla ]: estrela vermelha cresce linearmente até 90% da tela em 3s (transform scale = mais suave) */}
+      {showStar && starExpansionProgress !== null && (() => {
+        const startVmin = starExpansionStartVminRef.current > 0 ? starExpansionStartVminRef.current : 1;
+        const p = Math.min(1, starExpansionProgress ?? 0);
+        const scaleFactor = 1 + (STAR_EXPANSION_TARGET_VMIN / startVmin - 1) * p;
+        return (
+          <div
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              left: '50%',
+              top: '50%',
+              width: `${startVmin}vmin`,
+              height: `${startVmin}vmin`,
+              transform: `translate(-50%, -50%) scale(${scaleFactor})`,
+              transformOrigin: 'center center',
+              pointerEvents: 'none',
+              zIndex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            <img
+              src={neutronStarImage}
+              alt="Estrela expandida"
+              style={{
+                width: '100%',
+                height: '100%',
+                objectFit: 'contain'
+              }}
+            />
+          </div>
+        );
+      })()}
+      {/* Satélite de teste: órbita circular; cresce proporcionalmente ao zoom da estrela (tecla ]) */}
       {showStar && showSatellite && (
         (() => {
-          // Raio visual do Sol em pixels no tamanho original (100%) - fixo, não depende de planetSize
-          // Isso garante que o raio da órbita permaneça constante mesmo quando o Sol diminui
-          const starVisualDiameterPxOriginal = (EARTH_DIAMETER + 80) * 0.8; // Tamanho original (100%)
+          const starVisualDiameterPxOriginal = (EARTH_DIAMETER + 80) * 0.8;
           const starVisualRadiusPxOriginal = starVisualDiameterPxOriginal / 2;
-          // Satélite a 180px da superfície do Sol (usando tamanho original para manter órbita fixa)
-          const satelliteOrbitRadiusPx = starVisualRadiusPxOriginal + 180;
-          const satX = satelliteOrbitRadiusPx * Math.cos(satelliteAngle);
-          const satY = satelliteOrbitRadiusPx * Math.sin(satelliteAngle);
+          const baseOrbitRadiusPx = starVisualRadiusPxOriginal + 180;
+          const orbitScaleFactor = starExpansionProgress !== null && starExpansionStartVminRef.current > 0
+            ? 1 + (STAR_EXPANSION_TARGET_VMIN / starExpansionStartVminRef.current - 1) * Math.min(1, starExpansionProgress)
+            : 1;
+          const satelliteOrbitRadiusPx = baseOrbitRadiusPx * orbitScaleFactor;
+          const a = satelliteAngleRef.current;
+          const satX = satelliteOrbitRadiusPx * Math.cos(a);
+          const satY = satelliteOrbitRadiusPx * Math.sin(a);
           return (
             <>
               {showOrbitOutline && (
@@ -2123,9 +2481,11 @@ const NewtonCannon = (props: NewtonCannonProps) => {
                 />
               )}
               <div
+                ref={satelliteMarkerRef}
                 className="satellite-marker"
                 style={{
-                  transform: `translate(calc(-50% + ${satX}px), calc(-50% + ${satY}px))`
+                  transform: `translate(calc(-50% + ${satX}px), calc(-50% + ${satY}px))`,
+                  willChange: 'transform'
                 }}
               />
             </>
@@ -2143,39 +2503,27 @@ const NewtonCannon = (props: NewtonCannonProps) => {
             <p>As velocidades e datas escritas são reais.</p>
           </div>
           {(() => {
-            // Raio visual do Sol em pixels no tamanho original (100%) - fixo, não depende de planetSize
-            // Isso garante que o raio da órbita permaneça constante mesmo quando o Sol diminui
-            const starVisualDiameterPxOriginal = (EARTH_DIAMETER + 80) * 0.8; // Tamanho original (100%)
+            const starVisualDiameterPxOriginal = (EARTH_DIAMETER + 80) * 0.8;
             const starVisualRadiusPxOriginal = starVisualDiameterPxOriginal / 2;
-          
-          // Calcular parâmetros da elipse
-          // Periastro: 50% menor que a órbita circular (de 180px para 90px da superfície)
-          // Usar tamanho original para manter órbita fixa
-          const periastroPx = starVisualRadiusPxOriginal + 90;
-          
-          // Apoastro: 50px da borda direita da tela
+          const orbitScaleFactor = starExpansionProgress !== null && starExpansionStartVminRef.current > 0
+            ? 1 + (STAR_EXPANSION_TARGET_VMIN / starExpansionStartVminRef.current - 1) * Math.min(1, starExpansionProgress)
+            : 1;
+          // Calcular parâmetros da elipse; escalar proporcionalmente ao zoom da estrela
+          const periastroPx = (starVisualRadiusPxOriginal + 90) * orbitScaleFactor;
           const screenWidth = window.innerWidth;
           const screenHeight = window.innerHeight;
-          const apoastroPx = screenWidth / 2 - 50;
-          
-          // Semi-eixo maior (a) e distância focal (c)
+          const apoastroPx = (screenWidth / 2 - 50) * orbitScaleFactor;
           const a = (periastroPx + apoastroPx) / 2;
           const c = (apoastroPx - periastroPx) / 2;
-          
-          // Semi-eixo menor (b) - limitado por 50px das bordas superior/inferior
-          const maxB = screenHeight / 2 - 50;
+          const maxB = (screenHeight / 2 - 50) * orbitScaleFactor;
           const b = Math.min(maxB, Math.sqrt(a * a - c * c));
-          
-          // O Sol está no foco esquerdo, então o centro da elipse está deslocado para a direita
-          // O centro da elipse está em (c, 0) em relação ao Sol (que está em 0, 0)
           const ellipseCenterX = c;
           const ellipseCenterY = 0;
           
-          // Calcular posição do satélite usando equação paramétrica da elipse
-          // x = ellipseCenterX + a * cos(angle)
-          // y = ellipseCenterY + b * sin(angle)
-          const satX = ellipseCenterX + a * Math.cos(ellipticalOrbitAngle);
-          const satY = ellipseCenterY + b * Math.sin(ellipticalOrbitAngle);
+          // Posição do satélite (ângulo atualizado no rAF via ref; aqui só para render inicial / re-renders)
+          const angleForRender = ellipticalOrbitAngleRef.current;
+          const satX = ellipseCenterX + a * Math.cos(angleForRender);
+          const satY = ellipseCenterY + b * Math.sin(angleForRender);
           
           // Cálculo das velocidades lineares reais (em km/s) da Terra em órbita ao redor do Sol
           // usando os valores astronômicos de periélio/afélio e a equação de vis-viva.
@@ -2213,7 +2561,7 @@ const NewtonCannon = (props: NewtonCannonProps) => {
             return aNorm;
           };
 
-          const angle = normalizeAngle(ellipticalOrbitAngle);
+          const angle = normalizeAngle(angleForRender);
 
           const angleDistance = (a: number, center: number) => {
             const diff = Math.abs(a - center);
@@ -2238,9 +2586,11 @@ const NewtonCannon = (props: NewtonCannonProps) => {
                 />
               )}
               <div
+                ref={ellipticalMarkerRef}
                 className="satellite-marker"
                 style={{
-                  transform: `translate(calc(-50% + ${satX}px), calc(-50% + ${satY}px))`
+                  transform: `translate(calc(-50% + ${satX}px), calc(-50% + ${satY}px))`,
+                  willChange: 'transform'
                 }}
               />
               {showEllipseVelocities && (

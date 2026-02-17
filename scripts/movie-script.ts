@@ -34,6 +34,10 @@ const VIDEO_SCRIPT: VideoAction[] = [
 
 /**
  * Tipo que define todos os comandos válidos para ações no vídeo
+ * 
+ * Obs.: além do texto legível (ex.: 'show circular orbit'),
+ * também aceitamos diretamente a **tecla correspondente**
+ * (ex.: 't'), conforme mapeado em `CMD_TO_KEY` em generate-video.js.
  */
 type VideoCommand =
   // Controle geral
@@ -78,8 +82,44 @@ type VideoCommand =
   | 'kill human'
   | 'move human down'
   | 'bg'
-  | 'size indicator'
-  ;
+  | 'size indicator';
+
+/**
+ * Teclas correspondentes aos comandos acima (atalhos de teclado).
+ * 
+ * Exemplos:
+ * - 'z'  → 'troggle all'
+ * - 't'  → órbita circular
+ * - 'y'  → órbita elíptica
+ * - '1'…'6' → tiros 1…6
+ */
+type VideoCommandKey =
+  | 'z'
+  | 'x'
+  | 'q'
+  | 'w'
+  | 'e'
+  | 'r'
+  | '.'
+  | 'Escape'
+  | 'y'
+  | 't'
+  | '1'
+  | '2'
+  | '3'
+  | '4'
+  | '5'
+  | '6'
+  | '7'
+  | '9'
+  | '0'
+  | '-'
+  | '+'
+  | 'a'
+  | 's'
+  | 'ArrowDown'
+  | 'b'
+  | 'n';
 
 /**
  * Interface para uma ação no script do vídeo
@@ -87,8 +127,13 @@ type VideoCommand =
 interface VideoAction {
   /** Tempo de espera em segundos antes de executar esta ação */
   wait: number;
-  /** Comando legível a ser executado (deve ser um dos comandos válidos) */
-  cmd: VideoCommand;
+  /**
+   * Comando a ser executado.
+   * Pode ser:
+   *  - o texto legível da ação (ex.: 'show circular orbit')
+   *  - OU a tecla correspondente (ex.: 't')
+   */
+  cmd: VideoCommand | VideoCommandKey;
 }
 
 // Exportar tanto como default quanto como named export para compatibilidade
