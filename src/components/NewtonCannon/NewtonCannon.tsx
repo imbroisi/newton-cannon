@@ -58,6 +58,9 @@ const STAR_RADIUS_KM = 696340; // Raio da estrela em km
 const NEUTRON_STAR_DISPLAY_THRESHOLD = 6.2;
 const STAR_DIAMETER_PX = EARTH_DIAMETER + 80; // Diâmetro da estrela em pixels (visual)
 const STAR_RADIUS_PX = STAR_DIAMETER_PX / 2; // Raio da estrela em pixels
+// Diâmetro fixo do círculo preto atrás da estrela (tamanho da estrela a 6%); constante, não varia com teclas
+const STAR_6_PERCENT_DIAMETER_PX = STAR_DIAMETER_PX * 0.8 * (6 / 100);
+const SPEED_OF_LIGHT_KM_S = 299792; // Velocidade da luz em km/s (escape no horizonte de eventos)
 const STAR_RADIUS_M = STAR_RADIUS_KM * 1000; // Raio da estrela em metros
 const STAR_SCALE_KM_TO_PX = STAR_RADIUS_PX / STAR_RADIUS_KM; // Escala km para pixels da estrela
 const STAR_GRAVITY_M_S2 = (G * M_STAR) / (STAR_RADIUS_M * STAR_RADIUS_M); // Gravidade na superfície da estrela em m/s²
@@ -113,7 +116,7 @@ const ANIMATION_SPEED = getAnimationSpeed(); // Multiplicador de velocidade da a
 const VELOCITY_DISPLAY_DELAY = 500; // Delay em milissegundos para mostrar a velocidade (0,5 segundo)
 const FIRE_DELAY = 500; // Delay em milissegundos antes de disparar (1 segundo)
 const FONT_SIZE = 18; // Tamanho da fonte do texto de velocidade em pixels
-const ARROWS_H = -99.5; // Posição horizontal das setas (em pixels a partir do centro)
+const ARROWS_H = -99.5; // Posição horizontal das setas do indicador de distância (em pixels a partir do centro)
 const ARROW_TOP_V_POSITION = 1; // Ajuste vertical da seta de cima (em pixels)
 const ARROW_BOTTOM_V_POSITION = -9; // Ajuste vertical da seta de baixo (em pixels)
 const ROCK_PLANET_DIMENSION = 101; // Tamanho do planeta rochoso em percentagem (100% = mesmo tamanho da Terra)
@@ -229,7 +232,10 @@ const NewtonCannon = (props: NewtonCannonProps) => {
   const [showOrbitOutline, setShowOrbitOutline] = useState<boolean>(false); // Mostrar/esconder tracejado da órbita (circular ou elíptica)
   const [showReferenceCircle, setShowReferenceCircle] = useState<boolean>(false); // Mostrar/esconder circunferência tracejada da superfície original (inicialmente desligado)
   const [showNeutronReferenceCircle, setShowNeutronReferenceCircle] = useState<boolean>(false); // Mostrar/esconder circunferência tracejada da estrela de nêutrons (inicialmente desligado)
+  const [showBlackHoleReferenceCircle, setShowBlackHoleReferenceCircle] = useState<boolean>(false); // Tracejado buraco negro (30% do raio de L), tecla F
+  const [blackHoleCircleFilled, setBlackHoleCircleFilled] = useState<boolean>(false); // Interior do tracejado buraco negro opaco (preto), tecla G quando F está ligado
   const [showEinstein, setShowEinstein] = useState<boolean>(false); // Mostrar/esconder imagem do Einstein (inicialmente desligado)
+  const [showStarArrows, setShowStarArrows] = useState<boolean>(false); // Mostrar/esconder símbolo radial ao redor da estrela (tecla D)
   const [useGreenBackground, setUseGreenBackground] = useState<boolean>(false); // Opacidade do céu estrelado (0 ou 1)
   // Tecla ]: progresso 0..1 da expansão da estrela (null = não em expansão); estrela vermelha até 90vmin em 3s; fundo +20%
   const [starExpansionProgress, setStarExpansionProgress] = useState<number | null>(null);
@@ -240,6 +246,8 @@ const NewtonCannon = (props: NewtonCannonProps) => {
   const [executedCommands, setExecutedCommands] = useState<Set<number>>(new Set()); // Índices dos comandos já executados
   const [scriptLoaded, setScriptLoaded] = useState<boolean>(false); // Indica se o script foi carregado
   const [isRecordingScript, setIsRecordingScript] = useState<boolean>(false); // Gravação de teclas para movie-script.json (tecla K)
+  const [isNeutronStarBlack, setIsNeutronStarBlack] = useState<boolean>(false); // Estrela de nêutrons preta após tecla "-"
+  const [expandedStarHidden, setExpandedStarHidden] = useState<boolean>(false); // No zoom (]), estrela vermelha oculta com tecla "-" sem desfazer zoom
   const movieScriptRef = useRef<Array<{ wait: number; cmd: string }>>([]); // Script carregado
   const scriptTimeoutsRef = useRef<Array<number | NodeJS.Timeout>>([]);
   const isRecordingScriptRef = useRef<boolean>(false);
@@ -273,6 +281,12 @@ const NewtonCannon = (props: NewtonCannonProps) => {
   const starExpansionProgressRef = useRef<number | null>(null);
   const starExpansionOrbitScaleFactorRef = useRef<number>(1);
   const planetSizeRef = useRef<number>(100);
+  const isNeutronStarVisibleRef = useRef<boolean>(false);
+  isNeutronStarVisibleRef.current =
+    showStar &&
+    starExpansionProgress === null &&
+    planetSize < NEUTRON_STAR_DISPLAY_THRESHOLD &&
+    starMassMultiplier !== 8;
 
   // Posição base da boca do canhão (centro + raio da Terra + distância em km)
   // Mantém a física igual para Terra. Para o Sol, apenas compensamos o fato de o Sol
@@ -880,6 +894,12 @@ const NewtonCannon = (props: NewtonCannonProps) => {
       case 'toggle neutron circle':
         setShowNeutronReferenceCircle(prev => !prev);
         break;
+      case 'toggle black hole circle':
+        setShowBlackHoleReferenceCircle(prev => !prev);
+        break;
+      case 'toggle black hole fill':
+        setBlackHoleCircleFilled(prev => !prev);
+        break;
       // Imagem do Einstein
       case 'toggle einstein':
         setShowEinstein(prev => !prev);
@@ -1095,7 +1115,8 @@ const NewtonCannon = (props: NewtonCannonProps) => {
 
   // Listener para tecla "." esconder/mostrar indicação de distância, "Esc" para instruções,
   // "g" para ligar/desligar texto de gravidade, "x" para limpar, "t/y" para satélites,
-  // "Enter" ou "j" para executar movie-script.json, "k" para gravar movie-script.json
+  // "Enter" ou "j" para executar movie-script.json, "k" para gravar movie-script.json,
+  // "d" para ligar/desligar o símbolo radial ao redor da estrela
   useEffect(() => {
     const handleKeyPress = (event: KeyboardEvent) => {
       const key = event.key;
@@ -1177,18 +1198,25 @@ const NewtonCannon = (props: NewtonCannonProps) => {
         event.preventDefault(); // Prevenir scroll da página
         setShowDistanceIndicator(prev => !prev);
       }
-      if (event.key === 'Escape') {
+      if (key === 'Escape') {
         setShowInstructions(prev => !prev);
       }
-      if (event.key === 'g' || event.key === 'G') {
-        // Mostrar/esconder texto de gravidade
-        setShowGravity(prev => !prev);
+      if (key === 'g' || key === 'G') {
+        if (showBlackHoleReferenceCircle) {
+          setBlackHoleCircleFilled(prev => !prev);
+        } else {
+          setShowGravity(prev => !prev);
+        }
       }
-      if (event.key === 'h' || event.key === 'H') {
+      if (key === 'h' || key === 'H') {
         // Mostrar/esconder velocidade de escape
         setShowEscapeVelocity(prev => !prev);
       }
-      if (event.key === 'x' || event.key === 'X') {
+      if (key === 'd' || key === 'D') {
+        // Mostrar/esconder símbolo radial ao redor da estrela
+        setShowStarArrows(prev => !prev);
+      }
+      if (key === 'x' || key === 'X') {
         // Toggle: apagar/mostrar canhão, texto de velocidade e balas na superfície
         if (showCannon) {
           // Apagar canhão, texto de velocidade e balas na superfície
@@ -1201,11 +1229,11 @@ const NewtonCannon = (props: NewtonCannonProps) => {
           setShowCannon(true);
         }
       }
-      if (event.key === 'c' || event.key === 'C') {
+      if (key === 'c' || key === 'C') {
         // Mostrar canhão (show cannon)
         setShowCannon(true);
       }
-      if (event.key === 'v' || event.key === 'V') {
+      if (key === 'v' || key === 'V') {
         // Esconder canhão (hide cannon)
         setShowCannon(false);
         setSelectedVelocity(null);
@@ -1215,11 +1243,11 @@ const NewtonCannon = (props: NewtonCannonProps) => {
           fireTimeoutRef.current = null;
         }
       }
-      if (event.key === 't' || event.key === 'T') {
+      if (key === 't' || key === 'T') {
         // Mostrar/esconder satélite de teste em órbita circular ao redor do Sol
         setShowSatellite(prev => !prev);
       }
-      if (event.key === 'y' || event.key === 'Y') {
+      if (key === 'y' || key === 'Y') {
         // Mostrar/esconder órbita elíptica ao redor do Sol
         // Ao ligar a órbita elíptica:
         // - manter textos de velocidade da elipse desligados por padrão
@@ -1236,7 +1264,7 @@ const NewtonCannon = (props: NewtonCannonProps) => {
           return next;
         });
       }
-      if (event.key === 'u' || event.key === 'U') {
+      if (key === 'u' || key === 'U') {
         // Mostrar/esconder velocidades e linha tracejada da órbita elíptica
         setShowEllipseVelocities(prev => {
           const next = !prev;
@@ -1244,17 +1272,20 @@ const NewtonCannon = (props: NewtonCannonProps) => {
           return next;
         });
       }
-      if (event.key === 'o' || event.key === 'O') {
+      if (key === 'o' || key === 'O') {
         // Mostrar/esconder tracejado da órbita (circular ou elíptica)
         setShowOrbitOutline(prev => !prev);
       }
-      if (event.key === 'p' || event.key === 'P') {
+      if (key === 'p' || key === 'P') {
         // Mostrar/esconder circunferência tracejada da superfície original
         setShowReferenceCircle(prev => !prev);
       }
       if (event.key === 'l' || event.key === 'L') {
         // Mostrar/esconder circunferência tracejada da estrela de nêutrons
         setShowNeutronReferenceCircle(prev => !prev);
+      }
+      if (event.key === 'f' || event.key === 'F') {
+        setShowBlackHoleReferenceCircle(prev => !prev);
       }
       if (event.key === 'i' || event.key === 'I') {
         // Mostrar/esconder imagem do Einstein
@@ -1378,7 +1409,14 @@ const NewtonCannon = (props: NewtonCannonProps) => {
         }
       }
       if (event.key === '-' || event.key === '_') {
-        // Diminuir planeta em 50% do tamanho atual (com animação suave)
+        if (isNeutronStarVisibleRef.current) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          setIsNeutronStarBlack(true);
+          return;
+        }
+
+        // Fora da estrela de nêutrons, diminuir planeta em 50% do tamanho atual (com animação suave)
         setTargetPlanetSize(prev => {
           const newSize = prev * 0.5;
           // Permite diminuir até 1.5% para garantir visualização do buraco negro
@@ -1510,7 +1548,27 @@ const NewtonCannon = (props: NewtonCannonProps) => {
     return () => {
       window.removeEventListener('keydown', handleKeyPress);
     };
-  }, [showCannon, humanPosition, planetSize, showDistanceIndicator, showInstructions, showHuman, showGravity, showEscapeVelocity, showStar, useRockPlanet, executeBrowserScript, useGreenBackground, showSizeIndicator, starMassMultiplier]);
+  }, [showCannon, humanPosition, planetSize, showDistanceIndicator, showInstructions, showHuman, showGravity, showEscapeVelocity, showStar, useRockPlanet, executeBrowserScript, useGreenBackground, showSizeIndicator, starMassMultiplier, starExpansionProgress, showBlackHoleReferenceCircle]);
+
+  // Tecla "-" com estrela de nêutrons visível ou em zoom (expansão ]): desligar a estrela (sumir); em zoom, sair do zoom e ir para "volume sumiu..."
+  useEffect(() => {
+    const onMinusCapture = (e: KeyboardEvent) => {
+      if (e.key !== '-' && e.key !== '_') return;
+      if (isNeutronStarVisibleRef.current) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        setIsNeutronStarBlack(true);
+        return;
+      }
+      if (starExpansionProgressRef.current !== null) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        setExpandedStarHidden(true);
+      }
+    };
+    window.addEventListener('keydown', onMinusCapture, true);
+    return () => window.removeEventListener('keydown', onMinusCapture, true);
+  }, []);
 
   // Expor executeCommand no window para uso pelo Puppeteer (generate-video.js)
   useEffect(() => {
@@ -1532,12 +1590,30 @@ const NewtonCannon = (props: NewtonCannonProps) => {
     planetSizeRef.current = planetSize;
   }, [planetSize]);
 
+  // Resetar estado de estrela de nêutrons preta quando sair dessa visualização
+  useEffect(() => {
+    const isNeutronStarVisible =
+      showStar &&
+      starExpansionProgress === null &&
+      planetSize < NEUTRON_STAR_DISPLAY_THRESHOLD &&
+      starMassMultiplier !== 8;
+
+    if (!isNeutronStarVisible && isNeutronStarBlack) {
+      setIsNeutronStarBlack(false);
+    }
+  }, [showStar, starExpansionProgress, planetSize, starMassMultiplier, isNeutronStarBlack]);
+
   useEffect(() => {
     starExpansionProgressRef.current = starExpansionProgress;
     starExpansionOrbitScaleFactorRef.current = starExpansionProgress !== null && starExpansionStartVminRef.current > 0
       ? 1 + (STAR_EXPANSION_TARGET_VMIN / starExpansionStartVminRef.current - 1) * Math.min(1, starExpansionProgress)
       : 1;
+    if (starExpansionProgress === null) setExpandedStarHidden(false);
   }, [starExpansionProgress]);
+
+  useEffect(() => {
+    if (!showBlackHoleReferenceCircle && blackHoleCircleFilled) setBlackHoleCircleFilled(false);
+  }, [showBlackHoleReferenceCircle, blackHoleCircleFilled]);
 
   useEffect(() => {
     humanYRef.current = humanY;
@@ -2026,11 +2102,15 @@ const NewtonCannon = (props: NewtonCannonProps) => {
               </tr>
               <tr>
                 <td>G</td>
-                <td>liga/desliga texto de gravidade</td>
+                <td>com tracejado buraco negro (F) ligado: preenche interior (preto, 0,5s); senão: liga/desliga gravidade</td>
               </tr>
               <tr>
                 <td>H</td>
                 <td>liga/desliga velocidade de escape</td>
+              </tr>
+              <tr>
+                <td>D</td>
+                <td>liga/desliga símbolo radial ao redor da estrela</td>
               </tr>
               {/* Espaço entre grupos */}
               <tr><td colSpan={2}>&nbsp;</td></tr>
@@ -2075,6 +2155,10 @@ const NewtonCannon = (props: NewtonCannonProps) => {
               <tr>
                 <td>L</td>
                 <td>liga/desliga circunferência tracejada da estrela de nêutrons</td>
+              </tr>
+              <tr>
+                <td>F</td>
+                <td>liga/desliga tracejado buraco negro (30% do raio de L); velocidade da luz acima</td>
               </tr>
               <tr>
                 <td>I</td>
@@ -2189,8 +2273,8 @@ const NewtonCannon = (props: NewtonCannonProps) => {
               transition: 'opacity 0.3s ease-in-out'
             }}
           >
-            {planetSize < 3.1 ? (
-              <>0 - sumiu... <span style={{ position: 'relative', display: 'inline-block', zIndex: 1000, opacity: showEinstein ? 1 : 0, transition: 'opacity 0.3s ease-in-out' }}><img src={einsteinLinguaImage} alt="Einstein" style={{ width: '8em', height: 'auto', verticalAlign: 'middle', display: 'inline-block', transform: 'translateY(-10px) translateX(6px)', position: 'relative' }} /></span></>
+            {(planetSize < 3.1 || isNeutronStarBlack || expandedStarHidden) ? (
+              <>volume sumiu... <span style={{ position: 'relative', display: 'inline-block', zIndex: 1000, opacity: showEinstein ? 1 : 0, transition: 'opacity 0.3s ease-in-out' }}><img src={einsteinLinguaImage} alt="Einstein" style={{ width: '8em', height: 'auto', verticalAlign: 'middle', display: 'inline-block', transform: 'translateY(-10px) translateX(6px)', position: 'relative' }} /></span></>
             ) : planetSize < NEUTRON_STAR_DISPLAY_THRESHOLD && starMassMultiplier !== 8 ? (
               <>
                 <div>{formatNumber(Math.round(NEUTRON_STAR_DIAMETER_M / 1000), 0)} km</div>
@@ -2270,12 +2354,15 @@ const NewtonCannon = (props: NewtonCannonProps) => {
                 : `calc(50% - ${EARTH_RADIUS_PX * (planetSize / 100) + 30}px)`,
             top: showStar
               ? (() => {
-                  // Posicionar sempre 10px acima do sol (acompanha o tamanho atual)
-                  // Superfície do sol no tamanho atual = STAR_RADIUS_PX * 0.8 * (planetSize / 100)
-                  // 10px acima significa subtrair 10px fixos (valores negativos são para cima)
-                  // Os 10px são fixos, não variam proporcionalmente ao tamanho
+                  if (starExpansionProgress !== null) {
+                    const startVmin = starExpansionStartVminRef.current > 0 ? starExpansionStartVminRef.current : 1;
+                    const p = Math.min(1, starExpansionProgress ?? 0);
+                    const scaleFactor = 1 + (STAR_EXPANSION_TARGET_VMIN / startVmin - 1) * p;
+                    const radiusVmin = (startVmin * scaleFactor) / 2;
+                    return `calc(50% - ${radiusVmin}vmin - 10px)`;
+                  }
                   const currentSurfaceY = -STAR_RADIUS_PX * 0.8 * (planetSize / 100);
-                  const escapeY = currentSurfaceY - 10; // Sempre 10px fixos acima da superfície atual
+                  const escapeY = currentSurfaceY - 10;
                   return `calc(50% + ${escapeY}px)`;
                 })()
               : '50%',
@@ -2360,32 +2447,201 @@ const NewtonCannon = (props: NewtonCannonProps) => {
           )}
         </>
       )}
-      {/* Sol: só quando o tamanho ainda é maior que o de uma estrela de nêutrons (ou massa 8x); oculto durante expansão ] */}
-      {showStar && starExpansionProgress === null && (planetSize >= NEUTRON_STAR_DISPLAY_THRESHOLD || starMassMultiplier === 8) && (
-        <img
-          src={`/video-element-frames/frame-${String(starFrameIndex).padStart(6, '0')}.png`}
-          alt="Sol animado"
+      {/* Círculo preto preenchido atrás da estrela: diâmetro fixo (estrela a 6%), centralizado; também quando estrela em zoom está oculta */}
+      {showStar && (starExpansionProgress === null || expandedStarHidden) && (
+        <div
+          aria-hidden="true"
           style={{
             position: 'absolute',
             left: '50%',
             top: '50%',
             transform: 'translate(-50%, -50%)',
-            width: `${(EARTH_DIAMETER + 80) * 0.8 * (planetSize / 100)}px`,
-            height: `${(EARTH_DIAMETER + 80) * 0.8 * (planetSize / 100)}px`,
-            objectFit: 'contain',
+            width: `${STAR_6_PERCENT_DIAMETER_PX}px`,
+            height: `${STAR_6_PERCENT_DIAMETER_PX}px`,
+            borderRadius: '50%',
+            backgroundColor: '#000',
             pointerEvents: 'none',
             userSelect: 'none',
-            zIndex: 1,
-            backgroundColor: 'transparent',
-            filter: 'url(#sun-black-to-transparent)',
-            opacity: planetSize < 3.1 ? 0 : 1,
-            transition: 'opacity 0.3s ease-in-out'
+            zIndex: 0
           }}
         />
+      )}
+      {/* Com estrela em zoom oculta (expandedStarHidden): setas em tamanho normal (tecla D), sem zoom */}
+      {showStar && expandedStarHidden && (
+        <svg
+          width="68"
+          height="68"
+          viewBox="0 0 60 60"
+          style={{
+            position: 'absolute',
+            left: '50%',
+            top: '50%',
+            transform: 'translate(-50%, -50%)',
+              pointerEvents: 'none',
+              userSelect: 'none',
+              zIndex: 1000,
+              opacity: showStarArrows ? 1 : 0,
+              transition: 'opacity 1s linear'
+            }}
+          >
+            <defs>
+              <marker id="star-arrowhead-expanded-hidden" markerWidth="6" markerHeight="6" refX="0" refY="3" orient="auto" markerUnits="strokeWidth">
+              <path d="M0,0 L0,6 L6,3 z" fill="#ffa500" />
+            </marker>
+          </defs>
+          <line x1="30" y1="0" x2="30" y2="10" stroke="#ffa500" strokeWidth="2" markerEnd="url(#star-arrowhead-expanded-hidden)" />
+          <line x1="30" y1="60" x2="30" y2="50" stroke="#ffa500" strokeWidth="2" markerEnd="url(#star-arrowhead-expanded-hidden)" />
+          <line x1="0" y1="30" x2="10" y2="30" stroke="#ffa500" strokeWidth="2" markerEnd="url(#star-arrowhead-expanded-hidden)" />
+          <line x1="60" y1="30" x2="50" y2="30" stroke="#ffa500" strokeWidth="2" markerEnd="url(#star-arrowhead-expanded-hidden)" />
+        </svg>
+      )}
+      {/* Com estrela em zoom oculta: circunferência tracejada (tecla L) no tamanho da estrela em zoom máximo (90vmin) */}
+      {showStar && expandedStarHidden && showNeutronReferenceCircle && (
+        <div
+          className="planet-reference-circle"
+          style={{
+            position: 'absolute',
+            left: '50%',
+            top: '50%',
+            transform: 'translate(-50%, -50%)',
+            width: `${STAR_EXPANSION_TARGET_VMIN}vmin`,
+            height: `${STAR_EXPANSION_TARGET_VMIN}vmin`,
+            zIndex: 5
+          }}
+        />
+      )}
+      {/* Com estrela em zoom oculta: tracejado buraco negro (tecla F), 30% do raio de L, e velocidade da luz acima */}
+      {showStar && expandedStarHidden && showBlackHoleReferenceCircle && (
+        <>
+          <div
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              left: '50%',
+              top: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: `${STAR_EXPANSION_TARGET_VMIN * 0.3}vmin`,
+              height: `${STAR_EXPANSION_TARGET_VMIN * 0.3}vmin`,
+              borderRadius: '50%',
+              backgroundColor: '#000',
+              opacity: blackHoleCircleFilled ? 1 : 0,
+              transition: 'opacity 0.5s linear',
+              pointerEvents: 'none',
+              zIndex: 4
+            }}
+          />
+          <div
+            className="planet-reference-circle"
+            style={{
+              position: 'absolute',
+              left: '50%',
+              top: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: `${STAR_EXPANSION_TARGET_VMIN * 0.3}vmin`,
+              height: `${STAR_EXPANSION_TARGET_VMIN * 0.3}vmin`,
+              zIndex: 5
+            }}
+          />
+          <div
+            className="planet-gravity-indicator"
+            style={{
+              position: 'absolute',
+              left: '50%',
+              top: `calc(50% - ${(STAR_EXPANSION_TARGET_VMIN * 0.3) / 2}vmin - 8px)`,
+              transform: 'translate(-50%, -100%)',
+              fontSize: `${FONT_SIZE - 2}px`,
+              fontWeight: 'bold',
+              textAlign: 'center',
+              zIndex: 10,
+              color: 'white',
+              pointerEvents: 'none'
+            }}
+          >
+            <div>{formatNumber(SPEED_OF_LIGHT_KM_S, 0)} km/s</div>
+            <div style={{ fontSize: `${FONT_SIZE - 4}px`, marginTop: '2px' }}>velocidade da luz</div>
+          </div>
+        </>
+      )}
+      {/* Sol: só quando o tamanho ainda é maior que o de uma estrela de nêutrons (ou massa 8x); oculto durante expansão ] */}
+      {showStar && starExpansionProgress === null && (planetSize >= NEUTRON_STAR_DISPLAY_THRESHOLD || starMassMultiplier === 8) && (
+        <>
+          <svg
+            width="68"
+            height="68"
+            viewBox="0 0 60 60"
+            style={{
+              position: 'absolute',
+              left: '50%',
+              top: '50%',
+              transform: 'translate(-50%, -50%)',
+            pointerEvents: 'none',
+            userSelect: 'none',
+            zIndex: 1000,
+            opacity: showStarArrows ? 1 : 0,
+            transition: 'opacity 1s linear'
+          }}
+        >
+          <defs>
+            <marker id="star-arrowhead" markerWidth="6" markerHeight="6" refX="0" refY="3" orient="auto" markerUnits="strokeWidth">
+                <path d="M0,0 L0,6 L6,3 z" fill="#ffa500" />
+              </marker>
+            </defs>
+            <line x1="30" y1="0" x2="30" y2="10" stroke="#ffa500" strokeWidth="2" markerEnd="url(#star-arrowhead)" />
+            <line x1="30" y1="60" x2="30" y2="50" stroke="#ffa500" strokeWidth="2" markerEnd="url(#star-arrowhead)" />
+            <line x1="0" y1="30" x2="10" y2="30" stroke="#ffa500" strokeWidth="2" markerEnd="url(#star-arrowhead)" />
+            <line x1="60" y1="30" x2="50" y2="30" stroke="#ffa500" strokeWidth="2" markerEnd="url(#star-arrowhead)" />
+          </svg>
+          <img
+            src={`/video-element-frames/frame-${String(starFrameIndex).padStart(6, '0')}.png`}
+            alt="Sol animado"
+            style={{
+              position: 'absolute',
+              left: '50%',
+              top: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: `${(EARTH_DIAMETER + 80) * 0.8 * (planetSize / 100)}px`,
+              height: `${(EARTH_DIAMETER + 80) * 0.8 * (planetSize / 100)}px`,
+              objectFit: 'contain',
+              pointerEvents: 'none',
+              userSelect: 'none',
+              zIndex: 1,
+              backgroundColor: 'transparent',
+              filter: 'url(#sun-black-to-transparent)',
+              opacity: planetSize < 3.1 ? 0 : 1,
+              transition: 'opacity 0.3s ease-in-out'
+            }}
+          />
+        </>
       )}
       {/* Estrela de nêutrons: círculo #ff0000 (imagem SVG), mesmo diâmetro original da estrela; só ao atingir tamanho de nêutrons; oculta durante expansão ] */}
       {showStar && starExpansionProgress === null && planetSize < NEUTRON_STAR_DISPLAY_THRESHOLD && starMassMultiplier !== 8 && (
         <>
+          <svg
+            width="68"
+            height="68"
+            viewBox="0 0 60 60"
+            style={{
+              position: 'absolute',
+              left: '50%',
+              top: '50%',
+              transform: 'translate(-50%, -50%)',
+              pointerEvents: 'none',
+              userSelect: 'none',
+              zIndex: 1000,
+              opacity: showStarArrows ? 1 : 0,
+              transition: 'opacity 1s linear'
+            }}
+          >
+            <defs>
+              <marker id="star-arrowhead-neutron" markerWidth="6" markerHeight="6" refX="0" refY="3" orient="auto" markerUnits="strokeWidth">
+                <path d="M0,0 L0,6 L6,3 z" fill="#ffa500" />
+              </marker>
+            </defs>
+            <line x1="30" y1="0" x2="30" y2="10" stroke="#ffa500" strokeWidth="2" markerEnd="url(#star-arrowhead-neutron)" />
+            <line x1="30" y1="60" x2="30" y2="50" stroke="#ffa500" strokeWidth="2" markerEnd="url(#star-arrowhead-neutron)" />
+            <line x1="0" y1="30" x2="10" y2="30" stroke="#ffa500" strokeWidth="2" markerEnd="url(#star-arrowhead-neutron)" />
+            <line x1="60" y1="30" x2="50" y2="30" stroke="#ffa500" strokeWidth="2" markerEnd="url(#star-arrowhead-neutron)" />
+          </svg>
           {showNeutronReferenceCircle && (
             <div
               className="planet-reference-circle"
@@ -2400,6 +2656,61 @@ const NewtonCannon = (props: NewtonCannonProps) => {
               }}
             />
           )}
+          {showBlackHoleReferenceCircle && (() => {
+            const neutronDiameterPx = (EARTH_DIAMETER + 80) * 0.8 * (planetSize / 100);
+            const bhDiameterPx = neutronDiameterPx * 0.3;
+            return (
+              <>
+                <div
+                  aria-hidden="true"
+                  style={{
+                    position: 'absolute',
+                    left: '50%',
+                    top: '50%',
+                    transform: 'translate(-50%, -50%)',
+                    width: `${bhDiameterPx}px`,
+                    height: `${bhDiameterPx}px`,
+                    borderRadius: '50%',
+                    backgroundColor: '#000',
+                    opacity: blackHoleCircleFilled ? 1 : 0,
+                    transition: 'opacity 0.5s linear',
+                    pointerEvents: 'none',
+                    zIndex: 4
+                  }}
+                />
+                <div
+                  className="planet-reference-circle"
+                  style={{
+                    position: 'absolute',
+                    left: '50%',
+                    top: '50%',
+                    transform: 'translate(-50%, -50%)',
+                    width: `${bhDiameterPx}px`,
+                    height: `${bhDiameterPx}px`,
+                    zIndex: 5
+                  }}
+                />
+                <div
+                  className="planet-gravity-indicator"
+                  style={{
+                    position: 'absolute',
+                    left: '50%',
+                    top: `calc(50% - ${bhDiameterPx / 2}px - 8px)`,
+                    transform: 'translate(-50%, -100%)',
+                    fontSize: `${FONT_SIZE - 2}px`,
+                    fontWeight: 'bold',
+                    textAlign: 'center',
+                    zIndex: 10,
+                    color: 'white',
+                    pointerEvents: 'none'
+                  }}
+                >
+                  <div>{formatNumber(SPEED_OF_LIGHT_KM_S, 0)} km/s</div>
+                  <div style={{ fontSize: `${FONT_SIZE - 4}px`, marginTop: '2px' }}>velocidade da luz</div>
+                </div>
+              </>
+            );
+          })()}
           <img
             src={neutronStarImage}
             alt="Estrela de nêutrons"
@@ -2414,8 +2725,8 @@ const NewtonCannon = (props: NewtonCannonProps) => {
               pointerEvents: 'none',
               userSelect: 'none',
               zIndex: 1,
-              opacity: planetSize < 3.1 ? 0 : 1,
-              transition: 'opacity 0.3s ease-in-out'
+              opacity: isNeutronStarBlack ? 0 : 1,
+              transition: 'opacity 0.2s ease-out'
             }}
           />
         </>
@@ -2449,7 +2760,9 @@ const NewtonCannon = (props: NewtonCannonProps) => {
               style={{
                 width: '100%',
                 height: '100%',
-                objectFit: 'contain'
+                objectFit: 'contain',
+                opacity: expandedStarHidden ? 0 : 1,
+                transition: 'opacity 0.2s ease-out'
               }}
             />
           </div>

@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 60 60">
+  <defs>
+    <marker id="arrowhead" markerWidth="6" markerHeight="6" refX="0" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L6,3 z" fill="#ffff00" />
+    </marker>
+  </defs>
+
+  <!-- Quatro setas amarelas, 2px, apontando para o centro (30,30),
+       com as pontas posicionadas em um círculo de raio 20px -->
+
+  <!-- Cima (ponta em (30,10), apontando para baixo/centro) -->
+  <line x1="30" y1="0" x2="30" y2="10"
+        stroke="#ffff00" stroke-width="2"
+        marker-end="url(#arrowhead)" />
+
+  <!-- Baixo (ponta em (30,50), apontando para cima/centro) -->
+  <line x1="30" y1="60" x2="30" y2="50"
+        stroke="#ffff00" stroke-width="2"
+        marker-end="url(#arrowhead)" />
+
+  <!-- Esquerda (ponta em (10,30), apontando para a direita/centro) -->
+  <line x1="0" y1="30" x2="10" y2="30"
+        stroke="#ffff00" stroke-width="2"
+        marker-end="url(#arrowhead)" />
+
+  <!-- Direita (ponta em (50,30), apontando para a esquerda/centro) -->
+  <line x1="60" y1="30" x2="50" y2="30"
+        stroke="#ffff00" stroke-width="2"
+        marker-end="url(#arrowhead)" />
+</svg>
+
