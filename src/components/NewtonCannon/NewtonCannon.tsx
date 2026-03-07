@@ -211,6 +211,7 @@ const NewtonCannon = (props: NewtonCannonProps) => {
   const [showDistanceIndicator, setShowDistanceIndicator] = useState<boolean>(false);
   const [showGravity, setShowGravity] = useState<boolean>(false); // Visibilidade do texto de gravidade
   const [showEscapeVelocity, setShowEscapeVelocity] = useState<boolean>(false); // Visibilidade da velocidade de escape
+  const [escapeVelocityDismissing, setEscapeVelocityDismissing] = useState<boolean>(false); // true durante o fade-out ao desligar circunferência nêutrons
   const [starMassMultiplier, setStarMassMultiplier] = useState<number>(1); // Multiplicador de massa da estrela (1x ou 8x)
   const [showInstructions, setShowInstructions] = useState<boolean>(true);
   const [showCannon, setShowCannon] = useState<boolean>(false);
@@ -238,7 +239,11 @@ const NewtonCannon = (props: NewtonCannonProps) => {
   const [showHorizonteEventosLabel, setShowHorizonteEventosLabel] = useState<boolean>(false); // Texto "Horizonte de Eventos" abaixo do tracejado buraco negro, tecla /
   const [showTripleSchwarzschildCircle, setShowTripleSchwarzschildCircle] = useState<boolean>(false); // Círculo tracejado raio 3x Schwarzschild (O Grande Abismo), tecla ;
   const [showGrandeAbismoLabel, setShowGrandeAbismoLabel] = useState<boolean>(false); // Texto "O Grande Abismo" abaixo do círculo 3x, tecla F2
+  const [showBuracoNegroLabel, setShowBuracoNegroLabel] = useState<boolean>(false); // Texto "Buraco Negro" à esquerda do horizonte de eventos, tecla F4
+  const [showQuartoEscuroLabel, setShowQuartoEscuroLabel] = useState<boolean>(false); // Texto "Quarto Escuro" à direita do horizonte de eventos, tecla F5
   const [showEinstein, setShowEinstein] = useState<boolean>(false); // Mostrar/esconder imagem do Einstein (inicialmente desligado)
+  const [volumeSumiuDismissed, setVolumeSumiuDismissed] = useState<boolean>(false); // Ao desligar Einstein com I, esconde também "volume sumiu..." até sair do estado
+  const [volumeSumiuDismissing, setVolumeSumiuDismissing] = useState<boolean>(false); // true durante o fade-out da mensagem + Einstein
   const [showStarArrows, setShowStarArrows] = useState<boolean>(false); // Mostrar/esconder símbolo radial ao redor da estrela (tecla D)
   const [useGreenBackground, setUseGreenBackground] = useState<boolean>(false); // Opacidade do céu estrelado (0 ou 1)
   // Tecla ]: progresso 0..1 da expansão da estrela (null = não em expansão); estrela vermelha até 90vmin em 3s; fundo +20%
@@ -249,6 +254,7 @@ const NewtonCannon = (props: NewtonCannonProps) => {
   const [currentCommandIndex, setCurrentCommandIndex] = useState<number>(-1); // Índice do comando sendo executado (-1 = nenhum)
   const [executedCommands, setExecutedCommands] = useState<Set<number>>(new Set()); // Índices dos comandos já executados
   const [scriptLoaded, setScriptLoaded] = useState<boolean>(false); // Indica se o script foi carregado
+  const [scriptPlaybackMode, setScriptPlaybackMode] = useState<'auto' | 'manual'>('auto'); // F3: tempo automático vs Space para avançar
   const [isRecordingScript, setIsRecordingScript] = useState<boolean>(false); // Gravação de teclas para movie-script.json (tecla K)
   const [isNeutronStarBlack, setIsNeutronStarBlack] = useState<boolean>(false); // Estrela de nêutrons preta após tecla "-"
   const [neutronStarShrinkProgress, setNeutronStarShrinkProgress] = useState<number | null>(null); // Tecla [: animação encolher em 0,5 s
@@ -269,6 +275,8 @@ const NewtonCannon = (props: NewtonCannonProps) => {
   const scriptStartTimeRef = useRef<number>(0); // Tempo de início do script
   const isScriptRunningRef = useRef<boolean>(false); // Ref para verificar se o script está rodando
   const scriptAnimationFrameRef = useRef<number | null>(null); // Ref para o animation frame do script
+  const manualStepIndexRef = useRef<number>(0); // No modo manual, próximo índice a executar (Space)
+  const scriptPlaybackModeRef = useRef<'auto' | 'manual'>('auto');
   const humanYRef = useRef<number>(0);
   const previousPlanetSizeRef = useRef<number>(planetSize);
   const starFrameIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -335,6 +343,16 @@ const NewtonCannon = (props: NewtonCannonProps) => {
   useEffect(() => {
     starMassMultiplierRef.current = starMassMultiplier;
   }, [starMassMultiplier]);
+
+  useEffect(() => {
+    scriptPlaybackModeRef.current = scriptPlaybackMode;
+  }, [scriptPlaybackMode]);
+
+  // Ao sair do estado "volume sumiu", reativar a mensagem para a próxima vez
+  useEffect(() => {
+    const inVolumeSumiuState = planetSize < 3.1 || isNeutronStarBlack || expandedStarHidden;
+    if (!inVolumeSumiuState) setVolumeSumiuDismissed(false);
+  }, [planetSize, isNeutronStarBlack, expandedStarHidden]);
 
   // Desligar indicador de altura quando o Sol estiver visível
   // E posicionar o humano automaticamente na estrela
@@ -904,7 +922,18 @@ const NewtonCannon = (props: NewtonCannonProps) => {
         break;
       // Circunferência tracejada da estrela de nêutrons
       case 'toggle neutron circle':
-        setShowNeutronReferenceCircle(prev => !prev);
+        setShowNeutronReferenceCircle(prev => {
+          if (prev && showEscapeVelocity) {
+            setEscapeVelocityDismissing(true);
+            setTimeout(() => {
+              setShowEscapeVelocity(false);
+              setEscapeVelocityDismissing(false);
+            }, 400);
+          } else if (prev) {
+            setShowEscapeVelocity(false);
+          }
+          return !prev;
+        });
         break;
       case 'toggle black hole circle':
         setShowBlackHoleReferenceCircle(prev => !prev);
@@ -919,7 +948,7 @@ const NewtonCannon = (props: NewtonCannonProps) => {
       default:
         console.warn(`⚠️  Comando desconhecido: "${cmd}"`);
     }
-  }, [showStar, useRockPlanet, showCannon, humanPosition, planetSize, handleFire]);
+  }, [showStar, useRockPlanet, showCannon, humanPosition, planetSize, handleFire, showEscapeVelocity]);
 
   // Função para executar o movie-script (mesmo script usado para geração de vídeo)
   const executeBrowserScript = useCallback(() => {
@@ -938,12 +967,21 @@ const NewtonCannon = (props: NewtonCannonProps) => {
     setIsScriptRunning(true);
     isScriptRunningRef.current = true;
     setElapsedTime(0);
-    setCurrentCommandIndex(-1);
+    setCurrentCommandIndex(0);
     setExecutedCommands(new Set());
     const startTime = Date.now();
     scriptStartTimeRef.current = startTime;
-    
-    // Limpar timeouts anteriores se houver
+
+    // Modo manual: não agenda nada; avanço com Space (Space também inicia)
+    if (scriptPlaybackMode === 'manual') {
+      manualStepIndexRef.current = 0;
+      if (script.length > 0) {
+        setCurrentCommandIndex(0);
+      }
+      return;
+    }
+
+    // Modo automático: limpar timeouts anteriores e agendar por tempo
     scriptTimeoutsRef.current.forEach(timeout => clearTimeout(timeout));
     scriptTimeoutsRef.current = [];
     
@@ -1024,7 +1062,34 @@ const NewtonCannon = (props: NewtonCannonProps) => {
     if (script.length > 0) {
       setCurrentCommandIndex(0);
     }
-  }, [isScriptRunning, executeCommand]);
+  }, [isScriptRunning, scriptPlaybackMode, executeCommand]);
+
+  // No modo manual: avança um passo do script ao pressionar Space
+  const advanceScriptStep = useCallback(() => {
+    if (!isScriptRunningRef.current) return;
+    const script = movieScriptRef.current;
+    const idx = manualStepIndexRef.current;
+    if (script.length === 0 || idx >= script.length) return;
+    executeCommand(script[idx].cmd);
+    setExecutedCommands(prev => {
+      const next = new Set(prev);
+      next.add(idx);
+      return next;
+    });
+    manualStepIndexRef.current += 1;
+    if (manualStepIndexRef.current >= script.length) {
+      setIsScriptRunning(false);
+      isScriptRunningRef.current = false;
+      setCurrentCommandIndex(-1);
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
+      }
+      console.log('✅ Script concluído (modo manual)');
+    } else {
+      setCurrentCommandIndex(manualStepIndexRef.current);
+    }
+  }, [executeCommand]);
 
   // Cronômetro que atualiza a cada segundo
   useEffect(() => {
@@ -1122,7 +1187,9 @@ const NewtonCannon = (props: NewtonCannonProps) => {
       const key = event.key;
 
       // Tecla K: inicia ou finaliza gravação do movie-script.json (mesma tecla; grava "k" no arquivo como marcador)
+      // Durante a execução do script, K não abre salvar — só quando o usuário pressiona K de verdade
       if (key === 'k' || key === 'K') {
+        if (isScriptRunningRef.current) return;
         event.preventDefault();
         if (!isRecordingScriptRef.current) {
           // Iniciar gravação: primeiro comando é { wait: 0, cmd: 'k' }
@@ -1191,6 +1258,25 @@ const NewtonCannon = (props: NewtonCannonProps) => {
       if (key === 'Enter' || key === 'j' || key === 'J') {
         event.preventDefault();
         executeBrowserScript();
+        return;
+      }
+      // F3: alternar modo de reprodução do script (automático vs Space para avançar)
+      if (key === 'F3') {
+        event.preventDefault();
+        setScriptPlaybackMode(prev => prev === 'auto' ? 'manual' : 'auto');
+        return;
+      }
+      // Space: no modo passo a passo avança (ou inicia) o script; elimina scroll da página
+      const isSpace = event.code === 'Space' || key === ' ';
+      if (isSpace && scriptPlaybackModeRef.current === 'manual') {
+        event.preventDefault();
+        event.stopPropagation();
+        if (isScriptRunningRef.current) {
+          advanceScriptStep();
+        } else {
+          executeBrowserScript();
+          advanceScriptStep();
+        }
         return;
       }
       if (key === '.') {
@@ -1281,8 +1367,20 @@ const NewtonCannon = (props: NewtonCannonProps) => {
         setShowReferenceCircle(prev => !prev);
       }
       if (event.key === 'l' || event.key === 'L') {
-        // Mostrar/esconder circunferência tracejada da estrela de nêutrons
-        setShowNeutronReferenceCircle(prev => !prev);
+        // Mostrar/esconder circunferência tracejada da estrela de nêutrons.
+        // Ao desligar a circunferência, desligar junto a velocidade de escape com fade-out suave.
+        setShowNeutronReferenceCircle(prev => {
+          if (prev && showEscapeVelocity) {
+            setEscapeVelocityDismissing(true);
+            setTimeout(() => {
+              setShowEscapeVelocity(false);
+              setEscapeVelocityDismissing(false);
+            }, 400);
+          } else if (prev) {
+            setShowEscapeVelocity(false);
+          }
+          return !prev;
+        });
       }
       if (event.key === 'f' || event.key === 'F') {
         setShowBlackHoleReferenceCircle(prev => !prev);
@@ -1291,14 +1389,36 @@ const NewtonCannon = (props: NewtonCannonProps) => {
         setShowHorizonteEventosLabel(prev => !prev);
       }
       if (event.key === ';' || event.key === ':') {
-        setShowTripleSchwarzschildCircle(prev => !prev);
+        setShowTripleSchwarzschildCircle(prev => {
+          const next = !prev;
+          if (next) setShowEscapeVelocity(true); // ao mostrar ; mostrar também velocidade de escape dali
+          return next;
+        });
       }
       if (event.key === 'F2') {
         setShowGrandeAbismoLabel(prev => !prev);
       }
-      if (event.key === 'i' || event.key === 'I') {
-        // Mostrar/esconder imagem do Einstein
-        setShowEinstein(prev => !prev);
+      if (event.key === 'F4') {
+        event.preventDefault();
+        setShowBuracoNegroLabel(prev => !prev);
+      }
+      if (event.key === 'F5') {
+        event.preventDefault();
+        setShowQuartoEscuroLabel(prev => !prev);
+      }
+      if (event.key === 'i' || event.key === 'I' || event.code === 'KeyI') {
+        // Mostrar/esconder imagem do Einstein. Ao desligar, fade-out da mensagem "volume sumiu..." junto.
+        event.preventDefault();
+        setShowEinstein(prev => {
+          if (prev) {
+            setVolumeSumiuDismissing(true);
+            setTimeout(() => {
+              setVolumeSumiuDismissed(true);
+              setVolumeSumiuDismissing(false);
+            }, 400);
+          }
+          return !prev;
+        });
       }
       if (event.key === 'b' || event.key === 'B') {
         // Alternar opacidade do céu estrelado (0 ↔ 1)
@@ -1528,11 +1648,11 @@ const NewtonCannon = (props: NewtonCannonProps) => {
       }
     };
 
-    window.addEventListener('keydown', handleKeyPress);
+    window.addEventListener('keydown', handleKeyPress, true);
     return () => {
-      window.removeEventListener('keydown', handleKeyPress);
+      window.removeEventListener('keydown', handleKeyPress, true);
     };
-  }, [showCannon, humanPosition, planetSize, showDistanceIndicator, showInstructions, showHuman, showGravity, showEscapeVelocity, showStar, useRockPlanet, executeBrowserScript, useGreenBackground, showSizeIndicator, starMassMultiplier, starExpansionProgress, showBlackHoleReferenceCircle]);
+  }, [showCannon, humanPosition, planetSize, showDistanceIndicator, showInstructions, showHuman, showGravity, showEscapeVelocity, showStar, useRockPlanet, executeBrowserScript, advanceScriptStep, scriptPlaybackMode, isScriptRunning, useGreenBackground, showSizeIndicator, starMassMultiplier, starExpansionProgress, showBlackHoleReferenceCircle]);
 
   // Tecla "[" em captura: encolher estrela de nêutrons até sumir (tamanho natural, 0,5 s) ou encolher em zoom até zero
   useEffect(() => {
@@ -1541,17 +1661,29 @@ const NewtonCannon = (props: NewtonCannonProps) => {
       if (isNeutronStarVisibleRef.current) {
         e.preventDefault();
         e.stopImmediatePropagation();
-        setShowNeutronReferenceCircle(true);
+        setShowNeutronReferenceCircle(false);
+        setShowEscapeVelocity(false);
         neutronStarShrinkStartTimeRef.current = performance.now();
         setNeutronStarShrinkProgress(0);
         setNeutronStarShrinkRequested(true);
         return;
       }
-      // Estrela em zoom: primeiro L (tracejado), 0,1 s depois encolher
+      // Estrela em zoom: colapsar — esconder círculo tracejado e velocidade de escape, depois encolher
       if (starExpansionProgressRef.current !== null) {
         e.preventDefault();
         e.stopImmediatePropagation();
-        setShowNeutronReferenceCircle(prev => !prev);
+        setShowNeutronReferenceCircle(false);
+        setShowBlackHoleReferenceCircle(false);
+        setShowTripleSchwarzschildCircle(false);
+        if (showEscapeVelocity) {
+          setEscapeVelocityDismissing(true);
+          setTimeout(() => {
+            setShowEscapeVelocity(false);
+            setEscapeVelocityDismissing(false);
+          }, 400);
+        } else {
+          setShowEscapeVelocity(false);
+        }
         setTimeout(() => {
           expandedStarShrinkStartTimeRef.current = performance.now();
           setExpandedStarShrinkProgress(0);
@@ -1561,7 +1693,7 @@ const NewtonCannon = (props: NewtonCannonProps) => {
     };
     window.addEventListener('keydown', onBracketCapture, true);
     return () => window.removeEventListener('keydown', onBracketCapture, true);
-  }, []);
+  }, [showEscapeVelocity]);
 
   // Tecla "-" com estrela de nêutrons visível ou em zoom (expansão ]): desligar a estrela (sumir); em zoom, sair do zoom e ir para "volume sumiu..."
   useEffect(() => {
@@ -2125,11 +2257,35 @@ const NewtonCannon = (props: NewtonCannonProps) => {
         )}
       </div>
       
+      {/* Estado do modo de reprodução do script (F3) — à esquerda */}
+      {scriptLoaded && movieScriptRef.current.length > 0 && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '20px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 1001,
+            fontFamily: 'monospace',
+            fontSize: '14px',
+            color: '#ffffff',
+            background: 'rgba(0,0,0,0.5)',
+            padding: '8px 12px',
+            borderRadius: '6px'
+          }}
+        >
+          <span style={{ opacity: 0.9 }}>Script (F3): </span>
+          <span style={{ fontWeight: 'bold' }}>
+            {scriptPlaybackMode === 'auto' ? 'tempo automático' : 'Space (passo a passo)'}
+          </span>
+        </div>
+      )}
+      
       {/* Tabela de instruções na extrema esquerda */}
       {showInstructions && (
-        <div className="instructions-container" style={{ fontSize: `${(FONT_SIZE - 2) * 0.8}px` }}>
+        <div className="instructions-container" style={{ fontSize: `${(FONT_SIZE - 2) * 0.8 - 2}px` }}>
           <div className="instructions-title">Instruções:</div>
-          <table className="instructions-table" style={{ fontSize: `${(FONT_SIZE - 2) * 0.8}px` }}>
+          <table className="instructions-table" style={{ fontSize: `${(FONT_SIZE - 2) * 0.8 - 2}px` }}>
             <tbody>
               {/* Gravação de movie-script (mesma tecla inicia/finaliza; "k" gravado no arquivo como marcador) */}
               <tr>
@@ -2140,6 +2296,14 @@ const NewtonCannon = (props: NewtonCannonProps) => {
               <tr>
                 <td>J</td>
                 <td>executa o movie-script.json diretamente no browser</td>
+              </tr>
+              <tr>
+                <td>F3</td>
+                <td>alterna modo: tempo automático (do arquivo) ↔ passo a passo com Space</td>
+              </tr>
+              <tr>
+                <td>Space</td>
+                <td>no modo passo a passo (F3): inicia e avança o script (sem scroll)</td>
               </tr>
               {/* Espaço entre grupos */}
               <tr><td colSpan={2}>&nbsp;</td></tr>
@@ -2251,6 +2415,14 @@ const NewtonCannon = (props: NewtonCannonProps) => {
               <tr>
                 <td>F2</td>
                 <td>mostra/esconde texto "O Grande Abismo" abaixo da circunferência 3x (transição suave)</td>
+              </tr>
+              <tr>
+                <td>F4</td>
+                <td>mostra/esconde texto "Buraco Negro" à esquerda do círculo do horizonte de eventos (entrada suave)</td>
+              </tr>
+              <tr>
+                <td>F5</td>
+                <td>mostra/esconde texto "Quarto Escuro" à direita do círculo do horizonte de eventos (entrada suave)</td>
               </tr>
               <tr>
                 <td>I</td>
@@ -2365,8 +2537,12 @@ const NewtonCannon = (props: NewtonCannonProps) => {
               transition: 'opacity 0.3s ease-in-out'
             }}
           >
-            {(planetSize < 3.1 || isNeutronStarBlack || expandedStarHidden) ? (
-              <>volume sumiu... <span style={{ position: 'relative', display: 'inline-block', zIndex: 1000, opacity: showEinstein ? 1 : 0, transition: 'opacity 0.3s ease-in-out' }}><img src={einsteinLinguaImage} alt="Einstein" style={{ width: '8em', height: 'auto', verticalAlign: 'middle', display: 'inline-block', transform: 'translateY(-10px) translateX(6px)', position: 'relative' }} /></span></>
+            {(planetSize < 3.1 || isNeutronStarBlack || expandedStarHidden) && volumeSumiuDismissed && !volumeSumiuDismissing ? (
+              <></>
+            ) : (planetSize < 3.1 || isNeutronStarBlack || expandedStarHidden) && (!volumeSumiuDismissed || volumeSumiuDismissing) ? (
+              <span style={{ display: 'inline-block', opacity: volumeSumiuDismissing ? 0 : 1, transition: 'opacity 0.4s ease-in-out' }}>
+                volume sumiu... <span style={{ position: 'relative', display: 'inline-block', zIndex: 1000, opacity: showEinstein ? 1 : 0, transition: 'opacity 0.3s ease-in-out' }}><img src={einsteinLinguaImage} alt="Einstein" style={{ width: '8em', height: 'auto', verticalAlign: 'middle', display: 'inline-block', transform: 'translateY(-10px) translateX(6px)', position: 'relative' }} /></span>
+              </span>
             ) : planetSize < NEUTRON_STAR_DISPLAY_THRESHOLD && starMassMultiplier !== 8 ? (
               <>
                 <div>{formatNumber(Math.round(NEUTRON_STAR_DIAMETER_M / 1000), 0)} km</div>
@@ -2438,6 +2614,8 @@ const NewtonCannon = (props: NewtonCannonProps) => {
         <div
           className="planet-gravity-indicator"
           style={{
+            opacity: escapeVelocityDismissing ? 0 : 1,
+            transition: 'opacity 0.4s ease-in-out',
             position: 'absolute',
             left: showStar
               ? '50%'
@@ -2473,6 +2651,8 @@ const NewtonCannon = (props: NewtonCannonProps) => {
             <div></div>
           ) : showStar ? (
             (() => {
+              // Velocidade de escape em 3 R_s está junto à circunferência do Grande Abismo, não aqui
+              if (showTripleSchwarzschildCircle) return <div></div>;
               if (planetSize < NEUTRON_STAR_DISPLAY_THRESHOLD && starMassMultiplier !== 8) {
                 // Estrela de nêutrons: calcular velocidade de escape baseada no raio e massa atual
                 // v_escape = sqrt(2 * G * M / r)
@@ -2634,7 +2814,18 @@ const NewtonCannon = (props: NewtonCannonProps) => {
               zIndex: 5
             }}
           />
-          {showTripleSchwarzschildCircle && (
+          <div
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: 0,
+              right: 0,
+              bottom: 0,
+              pointerEvents: 'none',
+              opacity: showTripleSchwarzschildCircle ? 1 : 0,
+              transition: 'opacity 0.4s ease-in-out'
+            }}
+          >
             <div
               className="planet-reference-circle"
               style={{
@@ -2647,8 +2838,6 @@ const NewtonCannon = (props: NewtonCannonProps) => {
                 zIndex: 5
               }}
             />
-          )}
-          {showTripleSchwarzschildCircle && (
             <div
               className="planet-gravity-indicator"
               style={{
@@ -2656,20 +2845,16 @@ const NewtonCannon = (props: NewtonCannonProps) => {
                 left: '50%',
                 top: `calc(50% - ${(STAR_EXPANSION_TARGET_VMIN * 0.9) / 2}vmin - 8px)`,
                 transform: 'translate(-50%, -100%)',
-                fontSize: `${FONT_SIZE - 4}px`,
+                fontSize: `${FONT_SIZE - 2}px`,
                 fontWeight: 'bold',
                 textAlign: 'center',
                 zIndex: 10,
                 color: 'white',
-                pointerEvents: 'none',
-                opacity: showGrandeAbismoLabel ? 1 : 0,
-                transition: 'opacity 0.3s ease-in-out'
+                pointerEvents: 'none'
               }}
             >
-              170.000 km/s
+              {formatNumber(Math.round(SPEED_OF_LIGHT_KM_S / Math.sqrt(3)), 0)} km/s
             </div>
-          )}
-          {showTripleSchwarzschildCircle && (
             <div
               className="planet-gravity-indicator"
               style={{
@@ -2689,7 +2874,7 @@ const NewtonCannon = (props: NewtonCannonProps) => {
             >
               O Grande Abismo
             </div>
-          )}
+          </div>
           <div
             className="planet-gravity-indicator"
             style={{
@@ -2707,6 +2892,45 @@ const NewtonCannon = (props: NewtonCannonProps) => {
           >
             <div>{formatNumber(SPEED_OF_LIGHT_KM_S, 0)} km/s</div>
             <div style={{ fontSize: `${FONT_SIZE - 4}px`, marginTop: '2px' }}>velocidade da luz</div>
+          </div>
+          <div
+            className="planet-gravity-indicator"
+            style={{
+              position: 'absolute',
+              left: `calc(50% - ${(STAR_EXPANSION_TARGET_VMIN * 0.3) / 2}vmin - 8px)`,
+              top: '50%',
+              transform: 'translate(-100%, -50%)',
+              fontSize: `${(FONT_SIZE - 4) * 1.5}px`,
+              fontWeight: 'bold',
+              textAlign: 'right',
+              zIndex: 10,
+              color: 'white',
+              pointerEvents: 'none',
+              opacity: showBuracoNegroLabel ? 1 : 0,
+              transition: 'opacity 0.4s ease-in-out',
+              ...(showQuartoEscuroLabel ? { textDecoration: 'line-through' } : {})
+            }}
+          >
+            Buraco Negro
+          </div>
+          <div
+            className="planet-gravity-indicator"
+            style={{
+              position: 'absolute',
+              left: `calc(50% + ${(STAR_EXPANSION_TARGET_VMIN * 0.3) / 2}vmin + 8px)`,
+              top: '50%',
+              transform: 'translate(0, -50%)',
+              fontSize: `${(FONT_SIZE - 4) * 1.5}px`,
+              fontWeight: 'bold',
+              textAlign: 'left',
+              zIndex: 10,
+              color: 'white',
+              pointerEvents: 'none',
+              opacity: showQuartoEscuroLabel ? 1 : 0,
+              transition: 'opacity 0.4s ease-in-out'
+            }}
+          >
+            Quarto Escuro
           </div>
           <div
             className="planet-gravity-indicator"
@@ -2857,7 +3081,18 @@ const NewtonCannon = (props: NewtonCannonProps) => {
                     zIndex: 5
                   }}
                 />
-                {showTripleSchwarzschildCircle && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: 0,
+                    top: 0,
+                    right: 0,
+                    bottom: 0,
+                    pointerEvents: 'none',
+                    opacity: showTripleSchwarzschildCircle ? 1 : 0,
+                    transition: 'opacity 0.4s ease-in-out'
+                  }}
+                >
                   <div
                     className="planet-reference-circle"
                     style={{
@@ -2870,8 +3105,6 @@ const NewtonCannon = (props: NewtonCannonProps) => {
                       zIndex: 5
                     }}
                   />
-                )}
-                {showTripleSchwarzschildCircle && (
                   <div
                     className="planet-gravity-indicator"
                     style={{
@@ -2879,20 +3112,16 @@ const NewtonCannon = (props: NewtonCannonProps) => {
                       left: '50%',
                       top: `calc(50% - ${(bhDiameterPx * 3) / 2}px - 8px)`,
                       transform: 'translate(-50%, -100%)',
-                      fontSize: `${FONT_SIZE - 4}px`,
+                      fontSize: `${FONT_SIZE - 2}px`,
                       fontWeight: 'bold',
                       textAlign: 'center',
                       zIndex: 10,
                       color: 'white',
-                      pointerEvents: 'none',
-                      opacity: showGrandeAbismoLabel ? 1 : 0,
-                      transition: 'opacity 0.3s ease-in-out'
+                      pointerEvents: 'none'
                     }}
                   >
-                    170.000 km/s
+                    {formatNumber(Math.round(SPEED_OF_LIGHT_KM_S / Math.sqrt(3)), 0)} km/s
                   </div>
-                )}
-                {showTripleSchwarzschildCircle && (
                   <div
                     className="planet-gravity-indicator"
                     style={{
@@ -2912,7 +3141,46 @@ const NewtonCannon = (props: NewtonCannonProps) => {
                   >
                     O Grande Abismo
                   </div>
-                )}
+                </div>
+                <div
+                  className="planet-gravity-indicator"
+                  style={{
+                    position: 'absolute',
+                    left: `calc(50% - ${bhDiameterPx / 2}px - 8px)`,
+                    top: '50%',
+                    transform: 'translate(-100%, -50%)',
+                    fontSize: `${(FONT_SIZE - 4) * 1.5}px`,
+                    fontWeight: 'bold',
+                    textAlign: 'right',
+                    zIndex: 10,
+                    color: 'white',
+                    pointerEvents: 'none',
+                    opacity: showBuracoNegroLabel ? 1 : 0,
+                    transition: 'opacity 0.4s ease-in-out',
+                    ...(showQuartoEscuroLabel ? { textDecoration: 'line-through' } : {})
+                  }}
+                >
+                  Buraco Negro
+                </div>
+                <div
+                  className="planet-gravity-indicator"
+                  style={{
+                    position: 'absolute',
+                    left: `calc(50% + ${bhDiameterPx / 2}px + 8px)`,
+                    top: '50%',
+                    transform: 'translate(0, -50%)',
+                    fontSize: `${(FONT_SIZE - 4) * 1.5}px`,
+                    fontWeight: 'bold',
+                    textAlign: 'left',
+                    zIndex: 10,
+                    color: 'white',
+                    pointerEvents: 'none',
+                    opacity: showQuartoEscuroLabel ? 1 : 0,
+                    transition: 'opacity 0.4s ease-in-out'
+                  }}
+                >
+                  Quarto Escuro
+                </div>
                 <div
                   className="planet-gravity-indicator"
                   style={{
